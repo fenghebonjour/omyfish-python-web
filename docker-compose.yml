@@ -1,0 +1,82 @@
+networks:
+  omyfish-net:
+    driver: bridge
+  # Created by ../omyfish-ai's compose — start that stack first:
+  #   cd ../omyfish-ai && docker compose up -d
+  omyfish-shared:
+    external: true
+
+volumes:
+  postgres_data:
+
+services:
+
+  postgres:
+    image: postgis/postgis:16-3.4-alpine
+    environment:
+      POSTGRES_DB: omyfish
+      POSTGRES_USER: omyfish
+      POSTGRES_PASSWORD: omyfish_dev
+    ports:
+      - "5432:5432"
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    networks: [omyfish-net]
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U omyfish"]
+      interval: 10s
+      retries: 5
+
+  # Default: NOT started. The shared instance runs from ../omyfish-ai's own
+  # compose on the omyfish-shared network. For a self-contained demo without
+  # the external instance, run: docker compose --profile bundled up -d
+  # (conflicts with the external instance on host port 8000 — run only one).
+  ai-service:
+    profiles: [bundled]
+    build:
+      context: ../omyfish-ai
+      dockerfile: Dockerfile
+    ports:
+      - "8000:8000"
+    environment:
+      MODEL_PATH: /checkpoints/best.pt
+      CLASSES_PATH: /checkpoints/classes.json
+      METADATA_PATH: /metadata/fish_info.json
+    volumes:
+      - ../omyfish-python/checkpoints:/checkpoints:ro
+      - ../omyfish-python/data/metadata:/metadata:ro
+    networks: [omyfish-net]
+
+  django:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    ports:
+      - "8080:8080"
+    environment:
+      DEBUG: "false"
+      DJANGO_SECRET_KEY: dev-secret-change-in-production
+      JWT_SECRET: dev-secret-change-in-production-32b
+      DATABASE_URL: postgres://omyfish:omyfish_dev@postgres:5432/omyfish
+      AI_SERVICE_URL: http://ai-service:8000
+      ALLOWED_HOSTS: "*"
+    depends_on:
+      postgres: { condition: service_healthy }
+    networks: [omyfish-net, omyfish-shared]
+    healthcheck:
+      test: ["CMD", "wget", "-q", "--spider", "http://localhost:8080/api/v1/species"]
+      interval: 10s
+      retries: 5
+      start_period: 20s
+
+  frontend:
+    build:
+      context: ./frontend/omyfish-web
+      dockerfile: Dockerfile
+    ports:
+      - "3000:3000"
+    environment:
+      NEXT_PUBLIC_API_URL: http://localhost:8080
+    depends_on:
+      django: { condition: service_healthy }
+    networks: [omyfish-net]

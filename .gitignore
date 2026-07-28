@@ -1,0 +1,22 @@
+# Python
+__pycache__/
+*.pyc
+venv/
+.venv/
+*.egg-info/
+db.sqlite3
+
+# Django
+staticfiles/
+media/
+
+# Env
+.env
+
+# Node / Next.js
+frontend/omyfish-web/node_modules/
+frontend/omyfish-web/.next/
+
+# Editors
+.vscode/
+.idea/
