@@ -1,7 +1,7 @@
 "use client";
 
 import { useEffect, useState } from "react";
-import { getBiteScoreToday, type BiteForecast, type BiteHourlyScore } from "@/lib/api";
+import { api, BiteForecast, BiteHourlyScore } from "@/lib/api";
 import { FACTORS, barColor, scoreColor } from "@/lib/biteScore";
 
 function windowLabel(w: BiteHourlyScore) {
@@ -23,16 +23,17 @@ export function BiteScorePanel({
 
   useEffect(() => {
     let cancelled = false;
-    getBiteScoreToday(lat, lon, species ?? "general")
+    api.biteScore
+      .today(lat, lon, species ?? "general")
       .then((f) => { if (!cancelled) setForecast(f); })
       .catch((e) => { if (!cancelled) setError(e instanceof Error ? e.message : String(e)); });
     return () => { cancelled = true; };
   }, [lat, lon, species]);
 
   if (error)
-    return <div className="mt-2 text-xs text-gray-400">Bite score unavailable: {error}</div>;
+    return <div className="mt-3 text-xs text-gray-400">Bite score unavailable: {error}</div>;
   if (!forecast)
-    return <div className="mt-2 text-xs text-gray-400 animate-pulse">Loading bite score…</div>;
+    return <div className="mt-3 text-xs text-gray-400 animate-pulse">Loading bite score…</div>;
 
   // The forecast is anchored at local midnight, so find the current hour.
   const currentHour = new Date();
@@ -41,10 +42,10 @@ export function BiteScorePanel({
     forecast.hourly.find((h) => new Date(h.timestamp).getTime() === currentHour.getTime()) ??
     forecast.hourly[forecast.hourly.length - 1];
   if (!now)
-    return <div className="mt-2 text-xs text-gray-400">No forecast data for this spot.</div>;
+    return <div className="mt-3 text-xs text-gray-400">No forecast data for this spot.</div>;
 
   return (
-    <div className="mt-2 border-t border-gray-100 pt-3 flex flex-col gap-3">
+    <div className="mt-3 border-t pt-3 flex flex-col gap-3">
       {now.safetyFlag && (
         <div className="bg-red-50 border border-red-200 rounded-lg px-3 py-2 text-xs text-red-700">
           ⚠️ {now.safetyFlag}

@@ -1,98 +1,38 @@
-import { getRefreshToken, getToken, setTokens } from "./auth";
+// Default matches every backend's docker-compose gateway/origin port
+// (Java api-gateway, .NET api-gateway, Django) — this frontend is shared
+// verbatim across all three.
+const API_BASE = process.env.NEXT_PUBLIC_API_URL ?? "http://localhost:8080";
 
-const API_URL = process.env.NEXT_PUBLIC_API_URL ?? "http://localhost:8080";
-
-function authHeaders(): HeadersInit {
-  const token = getToken();
-  return token ? { Authorization: `Bearer ${token}` } : {};
-}
-
-async function checkOk(res: Response) {
-  if (!res.ok) throw new Error(`HTTP ${res.status}`);
-  return res;
-}
-
-// ── Auth ──────────────────────────────────────────────────────────────────────
-
-export async function register(email: string, password: string) {
-  const res = await fetch(`${API_URL}/api/v1/auth/register`, {
-    method: "POST",
-    headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({ email, password }),
-  });
-  await checkOk(res);
-  return res.json() as Promise<{ userId: string; email: string }>;
-}
-
-export interface AuthResult {
-  token: string;
-  refreshToken: string;
-  userId: string;
-  email: string;
-  role: string;
-}
-
-export async function login(email: string, password: string) {
-  const res = await fetch(`${API_URL}/api/v1/auth/login`, {
-    method: "POST",
-    headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({ email, password }),
-  });
-  await checkOk(res);
-  return res.json() as Promise<AuthResult>;
-}
-
-/** Rotates the stored refresh token into a fresh session; false when that fails. */
-export async function refreshSession(): Promise<boolean> {
-  const refreshToken = getRefreshToken();
-  if (!refreshToken) return false;
-  try {
-    const res = await fetch(`${API_URL}/api/v1/auth/refresh`, {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ refreshToken }),
-    });
-    if (!res.ok) return false;
-    const data = (await res.json()) as AuthResult;
-    setTokens(data.token, data.refreshToken);
-    return true;
-  } catch {
-    return false;
-  }
-}
-
-// ── Species identification ────────────────────────────────────────────────────
-
-export interface PredictionResult {
+export interface PredictionDto {
   speciesName: string;
   scientificName: string;
   confidence: number;
+  confidencePercent: string;
   rank: number;
   conservationStatus?: string;
-  habitat?: string;
-  diet?: string;
-  maxSizeCm?: number;
-  description?: string;
-  funFact?: string;
 }
 
-export interface IdentificationResponse {
-  predictions: PredictionResult[];
+export interface IdentifyFishResult {
+  predictions: PredictionDto[];
   uncertain: boolean;
   imageKey: string;
   isFish?: boolean;
 }
 
-export async function identifyFish(image: File, topK = 5): Promise<IdentificationResponse> {
-  const form = new FormData();
-  form.append("image", image);
-  form.append("topK", String(topK));
-  const res = await fetch(`${API_URL}/api/v1/species/identify`, { method: "POST", body: form });
-  await checkOk(res);
-  return res.json();
+export interface ObservationDto {
+  id: string;
+  userId: string;
+  speciesName: string;
+  scientificName?: string;
+  topConfidence: number;
+  imageStorageKey: string;
+  imageUrl?: string;
+  latitude?: number;
+  longitude?: number;
+  notes?: string;
+  observedAt: string;
+  createdAt: string;
 }
-
-// ── Bite score ────────────────────────────────────────────────────────────────
 
 export interface BiteHourlyScore {
   timestamp: string;
@@ -133,172 +73,88 @@ export interface BiteForecast {
   current: CurrentConditions | null; // live nowcast for "right now" alerts
 }
 
-// species accepts a profile key or any common/scientific name from a
-// confirmed fish ID — the backend resolves it (general fallback).
-export async function getBiteScoreToday(
-  lat: number,
-  lon: number,
-  species = "general",
-): Promise<BiteForecast> {
-  const res = await fetch(
-    `${API_URL}/api/v1/species/bite-score/today?lat=${lat}&lon=${lon}&species=${encodeURIComponent(species)}`,
-  );
-  await checkOk(res);
-  return res.json();
+export interface RegsSpeciesLimit {
+  species: string;
+  period: string;
+  catchLimit: string;
+  lengthLimit?: string | null;
+  fishingDevice?: string | null;
+  note?: string | null;
 }
 
-export async function getBiteScoreForecast(
-  lat: number,
-  lon: number,
-  species = "general",
-  hours = 336,
-): Promise<BiteForecast> {
-  const res = await fetch(
-    `${API_URL}/api/v1/species/bite-score/forecast?lat=${lat}&lon=${lon}&species=${encodeURIComponent(species)}&hours=${hours}`,
-  );
-  await checkOk(res);
-  return res.json();
+export interface RegsLimits {
+  lat: number;
+  lon: number;
+  zoneName: string;
+  zoneInfoUrl?: string | null;
+  rules: RegsSpeciesLimit[];
+  disclaimer: string;
 }
 
-// ── Observations ──────────────────────────────────────────────────────────────
-
-export interface Observation {
-  id: string;
-  userId: string;
-  speciesName: string;
-  scientificName: string;
-  topConfidence: number;
-  imageStorageKey: string;
-  latitude: number | null;
-  longitude: number | null;
-  notes: string | null;
-  observedAt: string;
-  createdAt: string;
+export interface RegsStation {
+  noBqma: string;
+  hydronyme: string;
+  latitude: number;
+  longitude: number;
+  distanceKm: number;
 }
 
-export async function getObservations(): Promise<Observation[]> {
-  const res = await fetch(`${API_URL}/api/v1/observations`, {
-    headers: authHeaders(),
-  });
-  await checkOk(res);
-  return res.json();
+export interface RegsConsumption {
+  lat: number;
+  lon: number;
+  species: string;
+  stationName: string;
+  distanceKm: number;
+  sizeClass?: string | null;
+  mealsPerMonth?: number | null;
+  fishingStatus?: string | null;
+  note?: string | null;
+  disclaimer: string;
 }
 
-export async function createObservation(body: {
-  speciesName: string;
-  scientificName: string;
-  topConfidence: number;
-  imageStorageKey: string;
-  latitude?: number | null;
-  longitude?: number | null;
-  notes?: string | null;
-}): Promise<Observation> {
-  const res = await fetch(`${API_URL}/api/v1/observations`, {
-    method: "POST",
-    headers: { "Content-Type": "application/json", ...authHeaders() },
-    body: JSON.stringify(body),
-  });
-  await checkOk(res);
-  return res.json();
+export interface RegsAskResponse {
+  question: string;
+  answer: string;
+  sources: string[];
+  disclaimer: string;
 }
 
-export async function deleteObservation(id: string): Promise<void> {
-  const res = await fetch(`${API_URL}/api/v1/observations/${id}`, {
-    method: "DELETE",
-    headers: authHeaders(),
-  });
-  if (!res.ok && res.status !== 204) throw new Error(`HTTP ${res.status}`);
-}
-
-export async function getObservationsGeoJson(): Promise<object> {
-  const res = await fetch(`${API_URL}/api/v1/observations/geojson`);
-  await checkOk(res);
-  return res.json();
-}
-
-// ── Species catalog ───────────────────────────────────────────────────────────
-
-export interface SpeciesInfo {
-  scientificName: string;
-  commonName: string;
-  family: string;
-  conservationStatus: string;
-  habitat: string;
-  geographicRange: string;
-  description: string;
-  northAmericanFreshwater: boolean;
-}
-
-export async function getSpecies(northAmericanFreshwater?: boolean): Promise<SpeciesInfo[]> {
-  const params =
-    northAmericanFreshwater !== undefined ? `?northAmericanFreshwater=${northAmericanFreshwater}` : "";
-  const res = await fetch(`${API_URL}/api/v1/species${params}`);
-  await checkOk(res);
-  return res.json();
-}
-
-// ── Notifications ─────────────────────────────────────────────────────────────
-
-export interface Notification {
+export interface NotificationDto {
   id: string;
   userId: string;
   type: string;
   title: string;
-  body: string | null;
-  read: boolean;
+  body?: string | null;
+  isRead: boolean;
   createdAt: string;
 }
 
-export async function getNotifications(): Promise<Notification[]> {
-  const res = await fetch(`${API_URL}/api/v1/notifications`, {
-    headers: authHeaders(),
-  });
-  await checkOk(res);
-  return res.json();
+export interface TokenResponse {
+  token: string;
+  refreshToken: string;
+  userId: string;
+  email: string;
+  role: string;
 }
 
-export async function markNotificationRead(id: string): Promise<void> {
-  const res = await fetch(`${API_URL}/api/v1/notifications/${id}/read`, {
-    method: "PUT",
-    headers: authHeaders(),
-  });
-  await checkOk(res);
+export interface UserDto {
+  id: string;
+  email: string;
+  displayName?: string;
+  role: string;
 }
 
-// ── Billing ───────────────────────────────────────────────────────────────────
-
-export interface Subscription {
+export interface SubscriptionDto {
   status: string; // trialing | active | canceled | expired
   plan: string | null;
   trialEnd: string | null;
   currentPeriodEnd: string | null;
 }
 
-export async function getMySubscription(): Promise<Subscription> {
-  const res = await fetch(`${API_URL}/api/v1/billing/me`, { headers: authHeaders() });
-  await checkOk(res);
-  return res.json();
-}
-
-export async function createCheckout(plan: "monthly" | "yearly"): Promise<string> {
-  const res = await fetch(`${API_URL}/api/v1/billing/checkout`, {
-    method: "POST",
-    headers: { "Content-Type": "application/json", ...authHeaders() },
-    body: JSON.stringify({ plan }),
-  });
-  await checkOk(res);
-  return (await res.json()).checkoutUrl as string;
-}
-
-// ── Admin ─────────────────────────────────────────────────────────────────────
-
 export interface AdminStats {
-  trialing: number;
-  active: number;
-  canceled: number;
-  expired: number;
-  activeMonthly: number;
-  activeYearly: number;
+  users: number;
+  subscriptions: Record<string, number>;
+  activePlans: { monthly: number; yearly: number };
   mrrCad: number;
 }
 
@@ -311,33 +167,167 @@ export interface AdminSubscriptionRow {
   currentPeriodEnd: string | null;
 }
 
-export async function getAdminStats(): Promise<AdminStats> {
-  const res = await fetch(`${API_URL}/api/v1/admin/stats`, { headers: authHeaders() });
-  await checkOk(res);
-  return res.json();
+async function apiFetch<T>(path: string, init?: RequestInit, token?: string): Promise<T> {
+  const headers: HeadersInit = {
+    ...(init?.headers ?? {}),
+    ...(token ? { Authorization: `Bearer ${token}` } : {}),
+  };
+  const res = await fetch(`${API_BASE}${path}`, { ...init, headers });
+  if (!res.ok) {
+    const text = await res.text().catch(() => res.statusText);
+    throw new Error(`${res.status}: ${text}`);
+  }
+  return res.json() as Promise<T>;
 }
 
-export async function getAdminSubscriptions(): Promise<AdminSubscriptionRow[]> {
-  const res = await fetch(`${API_URL}/api/v1/admin/subscriptions`, { headers: authHeaders() });
-  await checkOk(res);
-  return res.json();
-}
+export const api = {
+  auth: {
+    login: (email: string, password: string) =>
+      apiFetch<TokenResponse>("/api/v1/auth/login", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ email, password }),
+      }),
 
-async function adminPost(path: string, body?: object): Promise<AdminSubscriptionRow> {
-  const res = await fetch(`${API_URL}${path}`, {
-    method: "POST",
-    headers: { "Content-Type": "application/json", ...authHeaders() },
-    body: JSON.stringify(body ?? {}),
-  });
-  await checkOk(res);
-  return res.json();
-}
+    register: (email: string, password: string, displayName?: string) =>
+      apiFetch<UserDto>("/api/v1/auth/register", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ email, password, displayName }),
+      }),
 
-export const adminGrant = (userId: string, days = 365, plan = "yearly") =>
-  adminPost(`/api/v1/admin/subscriptions/${userId}/grant`, { days, plan });
+    refresh: (refreshToken: string) =>
+      apiFetch<TokenResponse>("/api/v1/auth/refresh", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ refreshToken }),
+      }),
 
-export const adminRevoke = (userId: string) =>
-  adminPost(`/api/v1/admin/subscriptions/${userId}/revoke`);
+    me: (token: string) =>
+      apiFetch<UserDto>("/api/v1/auth/me", {}, token),
+  },
 
-export const adminExtendTrial = (userId: string, days = 7) =>
-  adminPost(`/api/v1/admin/subscriptions/${userId}/extend-trial`, { days });
+  species: {
+    identify: (image: File, topK = 5, token?: string) => {
+      const form = new FormData();
+      form.append("image", image);
+      form.append("topK", String(topK));
+      return apiFetch<IdentifyFishResult>("/api/v1/species/identify", {
+        method: "POST",
+        body: form,
+      }, token);
+    },
+
+    getAll: (northAmericanFreshwater?: boolean) => {
+      const params = northAmericanFreshwater !== undefined
+        ? `?northAmericanFreshwater=${northAmericanFreshwater}`
+        : "";
+      return apiFetch<PredictionDto[]>(`/api/v1/species${params}`);
+    },
+  },
+
+  biteScore: {
+    // species accepts a profile key or any common/scientific name from a
+    // confirmed fish ID — the backend resolves it (general fallback).
+    today: (lat: number, lon: number, species = "general") =>
+      apiFetch<BiteForecast>(
+        `/api/v1/species/bite-score/today?lat=${lat}&lon=${lon}&species=${encodeURIComponent(species)}`),
+
+    forecast: (lat: number, lon: number, species = "general", hours = 336) =>
+      apiFetch<BiteForecast>(
+        `/api/v1/species/bite-score/forecast?lat=${lat}&lon=${lon}&species=${encodeURIComponent(species)}&hours=${hours}`),
+  },
+
+  // Quebec fishing regs/consumption advisor — proxied from omyfish-ai by
+  // every backend at the same path, chatbot/retrieval logic lives there only.
+  regs: {
+    limits: (lat: number, lon: number, species = "general") =>
+      apiFetch<RegsLimits>(
+        `/api/v1/species/regs/limits?lat=${lat}&lon=${lon}&species=${encodeURIComponent(species)}`),
+
+    zonesGeoJson: () =>
+      apiFetch<GeoJSON.FeatureCollection>("/api/v1/species/regs/zones/geojson"),
+
+    consumptionStations: (lat: number, lon: number, limit = 5) =>
+      apiFetch<RegsStation[]>(
+        `/api/v1/species/regs/consumption/stations?lat=${lat}&lon=${lon}&limit=${limit}`),
+
+    consumption: (lat: number, lon: number, species = "general") =>
+      apiFetch<RegsConsumption>(
+        `/api/v1/species/regs/consumption?lat=${lat}&lon=${lon}&species=${encodeURIComponent(species)}`),
+
+    ask: (question: string) =>
+      apiFetch<RegsAskResponse>("/api/v1/species/regs/ask", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ question }),
+      }),
+  },
+
+  notifications: {
+    getAll: (token: string) =>
+      apiFetch<NotificationDto[]>("/api/v1/notifications", {}, token),
+
+    markRead: (id: string, token: string) =>
+      fetch(`${API_BASE}/api/v1/notifications/${id}/read`, {
+        method: "PUT",
+        headers: { Authorization: `Bearer ${token}` },
+      }).then((r) => { if (!r.ok) throw new Error(`${r.status}`); }),
+  },
+
+  billing: {
+    me: (token: string) =>
+      apiFetch<SubscriptionDto>("/api/v1/billing/me", {}, token),
+
+    checkout: (plan: "monthly" | "yearly", token: string) =>
+      apiFetch<{ checkoutUrl: string }>("/api/v1/billing/checkout", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ plan }),
+      }, token),
+  },
+
+  admin: {
+    stats: (token: string) =>
+      apiFetch<AdminStats>("/api/v1/admin/stats", {}, token),
+
+    subscriptions: (token: string) =>
+      apiFetch<AdminSubscriptionRow[]>("/api/v1/admin/subscriptions", {}, token),
+
+    grant: (userId: string, token: string, days = 365, plan = "yearly") =>
+      apiFetch<SubscriptionDto>(`/api/v1/admin/subscriptions/${userId}/grant`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ days, plan }),
+      }, token),
+
+    revoke: (userId: string, token: string) =>
+      apiFetch<SubscriptionDto>(`/api/v1/admin/subscriptions/${userId}/revoke`, {
+        method: "POST",
+      }, token),
+
+    extendTrial: (userId: string, token: string, days = 7) =>
+      apiFetch<SubscriptionDto>(`/api/v1/admin/subscriptions/${userId}/extend-trial`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ days }),
+      }, token),
+  },
+
+  observations: {
+    getAll: (token: string, myOnly = true) =>
+      apiFetch<ObservationDto[]>(`/api/v1/observations?myOnly=${myOnly}`, {}, token),
+
+    getById: (id: string, token: string) =>
+      apiFetch<ObservationDto>(`/api/v1/observations/${id}`, {}, token),
+
+    delete: (id: string, token: string) =>
+      fetch(`${API_BASE}/api/v1/observations/${id}`, {
+        method: "DELETE",
+        headers: { Authorization: `Bearer ${token}` },
+      }).then((r) => { if (!r.ok && r.status !== 204) throw new Error(`${r.status}`); }),
+
+    getGeoJson: () =>
+      apiFetch<object>("/api/v1/observations/geojson"),
+  },
+};

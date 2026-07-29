@@ -1,60 +1,77 @@
 "use client";
 
 import Link from "next/link";
-import { usePathname, useRouter } from "next/navigation";
-import { useEffect, useState } from "react";
-import { clearTokens, getRefreshToken, getUserEmail, isLoggedIn } from "@/lib/auth";
-import { refreshSession } from "@/lib/api";
+import { useAuth } from "@/contexts/AuthContext";
+import { useRouter } from "next/navigation";
 
 export function NavBar() {
+  const { isAuthenticated, email, logout } = useAuth();
   const router = useRouter();
-  const pathname = usePathname();
-  const [email, setEmail] = useState<string | null>(null);
 
-  useEffect(() => {
-    if (isLoggedIn()) {
-      setEmail(getUserEmail());
-      return;
-    }
-    // Access token missing/expired — try a silent refresh before logging out.
-    if (getRefreshToken()) {
-      refreshSession().then((ok) => setEmail(ok ? getUserEmail() : null));
-    } else {
-      setEmail(null);
-    }
-  }, [pathname]);
-
-  function logout() {
-    clearTokens();
-    setEmail(null);
-    router.push("/login");
-  }
+  const handleLogout = () => {
+    logout();
+    router.push("/");
+  };
 
   return (
-    <nav className="bg-white border-b border-gray-200 px-6 py-3 flex items-center justify-between">
-      <div className="flex items-center gap-6">
-        <Link href="/" className="text-blue-600 font-bold text-lg">OMyFish</Link>
-        <Link href="/timing" className="text-sm text-gray-600 hover:text-gray-900">Timing</Link>
-        <Link href="/" className="text-sm text-gray-600 hover:text-gray-900">Identify</Link>
-        {email && (
-          <>
-            <Link href="/observations" className="text-sm text-gray-600 hover:text-gray-900">Observations</Link>
-            <Link href="/notifications" className="text-sm text-gray-600 hover:text-gray-900">Notifications</Link>
-          </>
-        )}
-      </div>
-      <div className="flex items-center gap-4">
-        {email ? (
-          <>
-            <span className="text-sm text-gray-500">{email}</span>
-            <button onClick={logout} className="text-sm text-red-500 hover:text-red-700">Logout</button>
-          </>
-        ) : (
-          <Link href="/login" className="text-sm bg-blue-600 text-white px-3 py-1.5 rounded-lg hover:bg-blue-700">
-            Login
+    <header className="bg-white border-b shadow-sm">
+      <div className="max-w-5xl mx-auto px-4 py-3 flex items-center gap-4">
+        <Link href="/" className="flex items-center gap-2 text-xl font-bold text-blue-700">
+          <span>🐟</span>
+          <span>OMyFish</span>
+        </Link>
+
+        <nav className="flex items-center gap-4 ml-4 flex-1">
+          <Link href="/timing" className="text-sm text-gray-600 hover:text-blue-700 transition-colors">
+            Timing
           </Link>
-        )}
+          <Link href="/" className="text-sm text-gray-600 hover:text-blue-700 transition-colors">
+            Identify
+          </Link>
+          <Link href="/regs" className="text-sm text-gray-600 hover:text-blue-700 transition-colors">
+            Regs &amp; Tips
+          </Link>
+          {isAuthenticated && (
+            <>
+              <Link href="/observations" className="text-sm text-gray-600 hover:text-blue-700 transition-colors">
+                My Observations
+              </Link>
+              <Link href="/notifications" className="text-sm text-gray-600 hover:text-blue-700 transition-colors">
+                Notifications
+              </Link>
+            </>
+          )}
+        </nav>
+
+        <div className="flex items-center gap-3">
+          {isAuthenticated ? (
+            <>
+              <span className="text-sm text-gray-500 hidden sm:block">{email}</span>
+              <button
+                onClick={handleLogout}
+                className="text-sm px-3 py-1.5 rounded-lg border border-gray-300 hover:bg-gray-50 transition-colors"
+              >
+                Log out
+              </button>
+            </>
+          ) : (
+            <>
+              <Link
+                href="/login"
+                className="text-sm text-gray-600 hover:text-blue-700 transition-colors"
+              >
+                Log in
+              </Link>
+              <Link
+                href="/register"
+                className="text-sm px-3 py-1.5 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition-colors"
+              >
+                Sign up
+              </Link>
+            </>
+          )}
+        </div>
       </div>
-    </nav>
+    </header>
   );
 }

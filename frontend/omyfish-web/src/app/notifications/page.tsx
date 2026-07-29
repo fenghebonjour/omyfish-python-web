@@ -2,38 +2,41 @@
 
 import { useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
-import { getNotifications, markNotificationRead, type Notification } from "@/lib/api";
-import { isLoggedIn } from "@/lib/auth";
+import { useAuth } from "@/contexts/AuthContext";
+import { api, NotificationDto } from "@/lib/api";
 
 export default function NotificationsPage() {
+  const { isAuthenticated, isLoading: authLoading, token } = useAuth();
   const router = useRouter();
-  const [notifications, setNotifications] = useState<Notification[]>([]);
+  const [notifications, setNotifications] = useState<NotificationDto[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
 
   useEffect(() => {
-    if (!isLoggedIn()) {
-      router.replace("/login");
+    if (authLoading) return;
+    if (!isAuthenticated) {
+      router.push("/login");
       return;
     }
-    getNotifications()
+    api.notifications
+      .getAll(token!)
       .then(setNotifications)
       .catch((err) => setError(err.message))
       .finally(() => setLoading(false));
-  }, [router]);
+  }, [isAuthenticated, authLoading, token, router]);
 
   async function handleRead(id: string) {
     try {
-      await markNotificationRead(id);
+      await api.notifications.markRead(id, token!);
       setNotifications((prev) =>
-        prev.map((n) => (n.id === id ? { ...n, read: true } : n))
+        prev.map((n) => (n.id === id ? { ...n, isRead: true } : n))
       );
     } catch {
       // ignore
     }
   }
 
-  if (loading) {
+  if (authLoading || loading) {
     return (
       <main className="min-h-screen bg-gray-50 flex items-center justify-center">
         <p className="text-gray-400 animate-pulse">Loading notifications...</p>
@@ -41,7 +44,7 @@ export default function NotificationsPage() {
     );
   }
 
-  const unread = notifications.filter((n) => !n.read).length;
+  const unread = notifications.filter((n) => !n.isRead).length;
 
   return (
     <main className="min-h-screen bg-gray-50 py-10">
@@ -63,17 +66,17 @@ export default function NotificationsPage() {
               <div
                 key={n.id}
                 className={`bg-white border rounded-xl p-4 flex justify-between items-start gap-4 shadow-sm ${
-                  n.read ? "border-gray-200 opacity-70" : "border-blue-200"
+                  n.isRead ? "border-gray-200 opacity-70" : "border-blue-200"
                 }`}
               >
                 <div>
-                  <p className={`font-medium text-gray-900 text-sm ${!n.read ? "font-semibold" : ""}`}>
+                  <p className={`font-medium text-gray-900 text-sm ${!n.isRead ? "font-semibold" : ""}`}>
                     {n.title}
                   </p>
                   {n.body && <p className="text-sm text-gray-500 mt-0.5">{n.body}</p>}
                   <p className="text-xs text-gray-400 mt-1">{new Date(n.createdAt).toLocaleString()}</p>
                 </div>
-                {!n.read && (
+                {!n.isRead && (
                   <button
                     onClick={() => handleRead(n.id)}
                     className="text-xs text-blue-600 hover:text-blue-800 shrink-0"

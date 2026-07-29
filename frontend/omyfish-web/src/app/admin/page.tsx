@@ -2,16 +2,8 @@
 
 import { useCallback, useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
-import {
-  adminExtendTrial,
-  adminGrant,
-  adminRevoke,
-  getAdminStats,
-  getAdminSubscriptions,
-  type AdminStats,
-  type AdminSubscriptionRow,
-} from "@/lib/api";
-import { getUserRole, isLoggedIn } from "@/lib/auth";
+import { useAuth } from "@/contexts/AuthContext";
+import { api, AdminStats, AdminSubscriptionRow } from "@/lib/api";
 
 const STATUS_STYLES: Record<string, string> = {
   active: "bg-green-50 text-green-700 border-green-200",
@@ -21,6 +13,7 @@ const STATUS_STYLES: Record<string, string> = {
 };
 
 export default function AdminPage() {
+  const { isAuthenticated, isLoading: authLoading, token } = useAuth();
   const router = useRouter();
   const [stats, setStats] = useState<AdminStats | null>(null);
   const [subs, setSubs] = useState<AdminSubscriptionRow[]>([]);
@@ -28,28 +21,25 @@ export default function AdminPage() {
   const [error, setError] = useState<string | null>(null);
 
   const load = useCallback(() => {
-    Promise.all([getAdminStats(), getAdminSubscriptions()])
+    Promise.all([api.admin.stats(token!), api.admin.subscriptions(token!)])
       .then(([s, rows]) => {
         setStats(s);
         setSubs(rows);
       })
       .catch((e) => {
-        if (String(e).includes("403")) setForbidden(true);
+        if (String(e).startsWith("403")) setForbidden(true);
         else setError(String(e));
       });
-  }, []);
+  }, [token]);
 
   useEffect(() => {
-    if (!isLoggedIn()) {
-      router.replace("/login");
-      return;
-    }
-    if (getUserRole()?.toUpperCase() !== "ADMIN") {
-      setForbidden(true);
+    if (authLoading) return;
+    if (!isAuthenticated) {
+      router.push("/login");
       return;
     }
     load();
-  }, [router, load]);
+  }, [isAuthenticated, authLoading, router, load]);
 
   async function act(fn: () => Promise<unknown>) {
     setError(null);
@@ -61,18 +51,18 @@ export default function AdminPage() {
     }
   }
 
-  if (forbidden) {
+  if (authLoading || (!stats && !forbidden && !error)) {
     return (
       <main className="min-h-screen bg-gray-50 flex items-center justify-center">
-        <p className="text-gray-500">This page is for administrators only.</p>
+        <p className="text-gray-400 animate-pulse">Loading admin...</p>
       </main>
     );
   }
 
-  if (!stats && !error) {
+  if (forbidden) {
     return (
       <main className="min-h-screen bg-gray-50 flex items-center justify-center">
-        <p className="text-gray-400 animate-pulse">Loading admin...</p>
+        <p className="text-gray-500">This page is for administrators only.</p>
       </main>
     );
   }
@@ -89,13 +79,13 @@ export default function AdminPage() {
         {stats && (
           <div className="grid grid-cols-2 sm:grid-cols-5 gap-3">
             {[
-              ["Active subs", stats.active],
-              ["On trial", stats.trialing],
-              ["Expired", stats.expired],
-              ["Canceled", stats.canceled],
+              ["Users", stats.users],
+              ["Active subs", stats.subscriptions["active"] ?? 0],
+              ["On trial", stats.subscriptions["trialing"] ?? 0],
+              ["Expired", stats.subscriptions["expired"] ?? 0],
               ["MRR (CAD)", `$${stats.mrrCad.toFixed(2)}`],
             ].map(([label, value]) => (
-              <div key={String(label)} className="bg-white border border-gray-200 rounded-xl p-4 shadow-sm">
+              <div key={label} className="bg-white border border-gray-200 rounded-xl p-4 shadow-sm">
                 <p className="text-xs text-gray-400">{label}</p>
                 <p className="text-xl font-semibold text-gray-900 mt-1">{value}</p>
               </div>
@@ -133,19 +123,19 @@ export default function AdminPage() {
                   </td>
                   <td className="p-3 text-right whitespace-nowrap">
                     <button
-                      onClick={() => act(() => adminGrant(s.userId))}
+                      onClick={() => act(() => api.admin.grant(s.userId, token!))}
                       className="text-xs text-blue-600 hover:underline mr-3"
                     >
                       Grant 1y
                     </button>
                     <button
-                      onClick={() => act(() => adminExtendTrial(s.userId))}
+                      onClick={() => act(() => api.admin.extendTrial(s.userId, token!))}
                       className="text-xs text-blue-600 hover:underline mr-3"
                     >
                       +7d trial
                     </button>
                     <button
-                      onClick={() => act(() => adminRevoke(s.userId))}
+                      onClick={() => act(() => api.admin.revoke(s.userId, token!))}
                       className="text-xs text-red-500 hover:underline"
                     >
                       Revoke

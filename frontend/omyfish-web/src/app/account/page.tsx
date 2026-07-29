@@ -2,8 +2,8 @@
 
 import { useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
-import { createCheckout, getMySubscription, type Subscription } from "@/lib/api";
-import { getUserEmail, isLoggedIn } from "@/lib/auth";
+import { useAuth } from "@/contexts/AuthContext";
+import { api, SubscriptionDto } from "@/lib/api";
 
 const PLAN_LABELS: Record<string, string> = {
   monthly: "5 CAD / month",
@@ -11,24 +11,27 @@ const PLAN_LABELS: Record<string, string> = {
 };
 
 export default function AccountPage() {
+  const { isAuthenticated, isLoading: authLoading, token, email } = useAuth();
   const router = useRouter();
-  const [sub, setSub] = useState<Subscription | null>(null);
+  const [sub, setSub] = useState<SubscriptionDto | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
 
   useEffect(() => {
-    if (!isLoggedIn()) {
-      router.replace("/login");
+    if (authLoading) return;
+    if (!isAuthenticated) {
+      router.push("/login");
       return;
     }
-    getMySubscription().then(setSub).catch((e) => setError(e.message));
-  }, [router]);
+    api.billing.me(token!).then(setSub).catch((e) => setError(e.message));
+  }, [isAuthenticated, authLoading, token, router]);
 
   async function subscribe(plan: "monthly" | "yearly") {
     setBusy(true);
     setError(null);
     try {
-      window.location.href = await createCheckout(plan);
+      const { checkoutUrl } = await api.billing.checkout(plan, token!);
+      window.location.href = checkoutUrl;
     } catch (e) {
       setError(
         String(e).includes("503")
@@ -39,7 +42,7 @@ export default function AccountPage() {
     }
   }
 
-  if (!sub && !error) {
+  if (authLoading || (!sub && !error)) {
     return (
       <main className="min-h-screen bg-gray-50 flex items-center justify-center">
         <p className="text-gray-400 animate-pulse">Loading account...</p>
@@ -56,7 +59,7 @@ export default function AccountPage() {
       <div className="max-w-2xl mx-auto px-4 flex flex-col gap-6">
         <div>
           <h1 className="text-2xl font-bold text-gray-900">Account</h1>
-          <p className="text-sm text-gray-500 mt-1">{getUserEmail()}</p>
+          <p className="text-sm text-gray-500 mt-1">{email}</p>
         </div>
 
         {error && (

@@ -1,19 +1,45 @@
 "use client";
 
-import { useState, useCallback } from "react";
+import { useState, useCallback, useEffect } from "react";
 import { useDropzone } from "react-dropzone";
+import { useAuth } from "@/contexts/AuthContext";
+import { api, type RegsLimits, type RegsConsumption } from "@/lib/api";
 import exifr from "exifr";
-import { identifyFish, createObservation, type PredictionResult, type IdentificationResponse } from "@/lib/api";
-import { isLoggedIn } from "@/lib/auth";
+
+interface PredictionDto {
+  speciesName: string;
+  scientificName: string;
+  confidence: number;
+  confidencePercent: string;
+  rank: number;
+  conservationStatus?: string;
+  habitat?: string;
+  diet?: string;
+  maxSizeCm?: number;
+  description?: string;
+  funFact?: string;
+}
+
+interface IdentifyFishResult {
+  predictions: PredictionDto[];
+  uncertain: boolean;
+  imageKey: string;
+  isFish?: boolean;
+}
 
 export function FishUploader() {
+  const { token, isAuthenticated } = useAuth();
   const [preview, setPreview] = useState<string | null>(null);
   const [loading, setLoading] = useState(false);
-  const [result, setResult] = useState<IdentificationResponse | null>(null);
+  const [result, setResult] = useState<IdentifyFishResult | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [saved, setSaved] = useState(false);
   const [saving, setSaving] = useState(false);
-  const [exifCoords, setExifCoords] = useState<{ latitude: number; longitude: number } | null>(null);
+  const [lat, setLat] = useState("");
+  const [lng, setLng] = useState("");
+  const [regsLimits, setRegsLimits] = useState<RegsLimits | null>(null);
+  const [regsConsumption, setRegsConsumption] = useState<RegsConsumption | null>(null);
+  const [regsLoading, setRegsLoading] = useState(false);
 
   const onDrop = useCallback(async (acceptedFiles: File[]) => {
     const file = acceptedFiles[0];
@@ -23,27 +49,121 @@ export function FishUploader() {
     setResult(null);
     setError(null);
     setSaved(false);
-    setExifCoords(null);
+    setLat("");
+    setLng("");
+    setRegsLimits(null);
+    setRegsConsumption(null);
     setLoading(true);
 
-    // Extract GPS from image EXIF in parallel with the identify call
-    const [data, gps] = await Promise.allSettled([
-      identifyFish(file, 5),
-      exifr.gps(file),
-    ]);
+    try {
+      const formData = new FormData();
+      formData.append("image", file);
+      formData.append("topK", "5");
 
-    if (gps.status === "fulfilled" && gps.value?.latitude != null) {
-      setExifCoords({ latitude: gps.value.latitude, longitude: gps.value.longitude });
+      const headers: HeadersInit = {};
+      if (token) headers["Authorization"] = `Bearer ${token}`;
+
+      const res = await fetch(
+        `${process.env.NEXT_PUBLIC_API_URL}/api/v1/species/identify`,
+        { method: "POST", body: formData, headers }
+      );
+
+      if (!res.ok) throw new Error(`HTTP ${res.status}: ${res.statusText}`);
+      const data: IdentifyFishResult = await res.json();
+      setResult(data);
+
+      const fallbackToGeolocation = () => {
+        navigator.geolocation?.getCurrentPosition(
+          (pos) => {
+            setLat(String(pos.coords.latitude));
+            setLng(String(pos.coords.longitude));
+          },
+          () => {}
+        );
+      };
+
+      try {
+        const parsed = await exifr.parse(file, {
+          gps: true,
+          tiff: true,
+          xmp: false,
+          iptc: false,
+          icc: false,
+          jfif: false,
+          ihdr: false,
+          translateValues: true,
+          reviveValues: true,
+        });
+        const exifLat = parsed?.latitude;
+        const exifLng = parsed?.longitude;
+        if (exifLat != null && exifLng != null && !isNaN(exifLat) && !isNaN(exifLng)) {
+          setLat(String(exifLat));
+          setLng(String(exifLng));
+        } else {
+          fallbackToGeolocation();
+        }
+      } catch {
+        fallbackToGeolocation();
+      }
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Identification failed");
+    } finally {
+      setLoading(false);
     }
+  }, [token]);
 
-    if (data.status === "fulfilled") {
-      setResult(data.value);
-    } else {
-      setError(data.reason instanceof Error ? data.reason.message : "Identification failed");
+  // lat/lng resolve asynchronously (EXIF, then geolocation fallback) after
+  // the identify result lands, so fetch regs info once both are available.
+  useEffect(() => {
+    if (!result || result.isFish === false || !lat || !lng) return;
+    const species = result.predictions[0]?.speciesName;
+    if (!species) return;
+    setRegsLoading(true);
+    Promise.allSettled([
+      api.regs.limits(Number(lat), Number(lng), species),
+      api.regs.consumption(Number(lat), Number(lng), species),
+    ]).then(([limitsResult, consumptionResult]) => {
+      setRegsLimits(limitsResult.status === "fulfilled" ? limitsResult.value : null);
+      setRegsConsumption(consumptionResult.status === "fulfilled" ? consumptionResult.value : null);
+      setRegsLoading(false);
+    });
+  }, [result, lat, lng]);
+
+  const handleSave = async () => {
+    if (!result || !token) return;
+    setSaving(true);
+    try {
+      const top = result.predictions[0];
+      // The image is already stored — identify uploaded it and returned
+      // imageKey — so we just reference it here instead of re-uploading.
+      const body = {
+        speciesName: top.speciesName,
+        scientificName: top.scientificName ?? "",
+        topConfidence: top.confidence,
+        imageStorageKey: result.imageKey,
+        latitude: lat ? Number(lat) : null,
+        longitude: lng ? Number(lng) : null,
+      };
+
+      const res = await fetch(
+        `${process.env.NEXT_PUBLIC_API_URL}/api/v1/observations`,
+        {
+          method: "POST",
+          body: JSON.stringify(body),
+          headers: {
+            "Content-Type": "application/json",
+            Authorization: `Bearer ${token}`,
+          },
+        }
+      );
+      if (!res.ok) throw new Error(`HTTP ${res.status}`);
+      setSaved(true);
+    } catch (err) {
+      alert("Save failed: " + (err instanceof Error ? err.message : err));
+    } finally {
+      setSaving(false);
     }
-
-    setLoading(false);
-  }, []);
+  };
 
   const { getRootProps, getInputProps, isDragActive } = useDropzone({
     onDrop,
@@ -51,45 +171,6 @@ export function FishUploader() {
     maxSize: 20 * 1024 * 1024,
     multiple: false,
   });
-
-  async function saveObservation() {
-    if (!result) return;
-    const top = result.predictions[0];
-    if (!top) return;
-    setSaving(true);
-    try {
-      let latitude = exifCoords?.latitude ?? null;
-      let longitude = exifCoords?.longitude ?? null;
-
-      if (latitude == null && navigator.geolocation) {
-        try {
-          const pos = await new Promise<GeolocationPosition>((resolve, reject) =>
-            navigator.geolocation.getCurrentPosition(resolve, reject, { timeout: 5000 })
-          );
-          latitude = pos.coords.latitude;
-          longitude = pos.coords.longitude;
-        } catch {
-          // location denied or unavailable — save without coordinates
-        }
-      }
-
-      await createObservation({
-        speciesName: top.speciesName,
-        scientificName: top.scientificName,
-        topConfidence: top.confidence,
-        imageStorageKey: result.imageKey,
-        latitude,
-        longitude,
-      });
-      setSaved(true);
-    } catch (err) {
-      setError(err instanceof Error ? err.message : "Failed to save observation");
-    } finally {
-      setSaving(false);
-    }
-  }
-
-  const loggedIn = isLoggedIn();
 
   return (
     <div className="flex flex-col gap-6 max-w-2xl mx-auto p-6">
@@ -100,20 +181,30 @@ export function FishUploader() {
       >
         <input {...getInputProps()} />
         {preview ? (
-          <img src={preview} alt="Upload preview" className="max-h-64 mx-auto rounded-lg object-contain" />
+          <img
+            src={preview}
+            alt="Upload preview"
+            className="max-h-64 mx-auto rounded-lg object-contain"
+          />
         ) : (
           <p className="text-gray-500 text-lg">
-            {isDragActive ? "Drop your fish photo here" : "Drag & drop a fish photo, or click to select"}
+            {isDragActive
+              ? "Drop your fish photo here"
+              : "Drag & drop a fish photo, or click to select"}
           </p>
         )}
       </div>
 
       {loading && (
-        <div className="text-center text-blue-600 font-medium animate-pulse">Identifying species...</div>
+        <div className="text-center text-blue-600 font-medium animate-pulse">
+          Identifying species…
+        </div>
       )}
 
       {error && (
-        <div className="bg-red-50 border border-red-200 rounded-lg p-4 text-red-700">{error}</div>
+        <div className="bg-red-50 border border-red-200 rounded-lg p-4 text-red-700">
+          {error}
+        </div>
       )}
 
       {result && result.isFish === false && (
@@ -126,47 +217,64 @@ export function FishUploader() {
         <div className="flex flex-col gap-3">
           {result.uncertain && (
             <div className="bg-yellow-50 border border-yellow-300 rounded-lg p-3 text-yellow-800 text-sm">
-              Low confidence — consider using a clearer photo
+              Low confidence — try a clearer photo in better lighting
             </div>
           )}
           {result.predictions.map((p) => (
             <PredictionCard key={p.rank} prediction={p} />
           ))}
 
-          {loggedIn && !saved && (
-            <div className="flex flex-col gap-1">
-              {exifCoords && (
-                <p className="text-xs text-gray-400 text-center">
-                  GPS from photo: {exifCoords.latitude.toFixed(4)}, {exifCoords.longitude.toFixed(4)}
-                </p>
-              )}
+          {lat && lng && (regsLoading || regsLimits || regsConsumption) && (
+            <div className="grid grid-cols-2 gap-3">
+              <RegsLimitCard limits={regsLimits} loading={regsLoading} />
+              <RegsConsumptionCard consumption={regsConsumption} loading={regsLoading} />
+            </div>
+          )}
+
+          {isAuthenticated && !saved && (
+            <div className="flex flex-col gap-2">
+              <div className="flex gap-2 items-center">
+                <label className="text-xs text-gray-500 w-20 shrink-0">Location</label>
+                <input
+                  type="number"
+                  placeholder="Latitude"
+                  value={lat}
+                  onChange={(e) => setLat(e.target.value)}
+                  className="flex-1 text-xs border rounded px-2 py-1 text-gray-700"
+                  step="any"
+                />
+                <input
+                  type="number"
+                  placeholder="Longitude"
+                  value={lng}
+                  onChange={(e) => setLng(e.target.value)}
+                  className="flex-1 text-xs border rounded px-2 py-1 text-gray-700"
+                  step="any"
+                />
+              </div>
               <button
-                onClick={saveObservation}
+                onClick={handleSave}
                 disabled={saving}
-                className="mt-1 w-full bg-green-600 text-white py-2 rounded-lg text-sm font-medium hover:bg-green-700 disabled:opacity-50"
+                className="w-full py-2 rounded-lg border border-blue-600 text-blue-600 hover:bg-blue-50 text-sm font-medium disabled:opacity-50 transition-colors"
               >
-                {saving ? "Saving..." : "Save top result as observation"}
+                {saving ? "Saving…" : "Save to My Observations"}
               </button>
             </div>
           )}
           {saved && (
-            <div className="bg-green-50 border border-green-200 rounded-lg p-3 text-green-700 text-sm text-center">
-              Observation saved! View it in <a href="/observations" className="underline font-medium">My Observations</a>.
+            <div className="text-center text-sm text-green-600 font-medium">
+              Saved to your observations — <a href="/observations" className="underline">View My Observations</a>
             </div>
           )}
-          {!loggedIn && (
+          {!isAuthenticated && (
             <p className="text-center text-sm text-gray-400">
-              <a href="/login" className="text-blue-500 underline">Sign in</a> to save this observation
+              <a href="/login" className="text-blue-600 hover:underline">Log in</a> to save this observation
             </p>
           )}
         </div>
       )}
     </div>
   );
-}
-
-function formatSpeciesName(name: string): string {
-  return name.replace(/_/g, " ").replace(/\b\w/g, c => c.toUpperCase());
 }
 
 const MEDALS = ["🥇", "🥈", "🥉"];
@@ -177,9 +285,10 @@ function conservationIcon(status: string): string {
   return "🟢";
 }
 
-function PredictionCard({ prediction }: { prediction: PredictionResult }) {
+function PredictionCard({ prediction }: { prediction: PredictionDto }) {
   const pct = Math.round(prediction.confidence * 100);
-  const barColor = pct >= 85 ? "bg-green-500" : pct >= 50 ? "bg-yellow-400" : "bg-red-400";
+  const barColor =
+    pct >= 85 ? "bg-green-500" : pct >= 50 ? "bg-yellow-400" : "bg-red-400";
   const medal = MEDALS[prediction.rank - 1] ?? "";
 
   return (
@@ -188,14 +297,19 @@ function PredictionCard({ prediction }: { prediction: PredictionResult }) {
         <div>
           <p className="font-semibold text-gray-900">
             {medal && <span className="mr-1">{medal}</span>}
-            {formatSpeciesName(prediction.speciesName)}
+            {prediction.speciesName}
           </p>
           <p className="text-sm text-gray-500 italic">{prediction.scientificName}</p>
         </div>
-        <span className="text-sm font-medium text-gray-700">{pct}%</span>
+        <span className="text-sm font-medium text-gray-700">
+          {prediction.confidencePercent}
+        </span>
       </div>
       <div className="w-full bg-gray-100 rounded-full h-2">
-        <div className={`h-2 rounded-full ${barColor}`} style={{ width: `${pct}%` }} />
+        <div
+          className={`h-2 rounded-full ${barColor}`}
+          style={{ width: `${pct}%` }}
+        />
       </div>
       <div className="flex flex-col gap-1 text-sm text-gray-700">
         {prediction.habitat && (
@@ -221,6 +335,50 @@ function PredictionCard({ prediction }: { prediction: PredictionResult }) {
         <p className="text-sm bg-blue-50 border border-blue-100 rounded-lg p-2 text-blue-800">
           💡 {prediction.funFact}
         </p>
+      )}
+    </div>
+  );
+}
+
+function RegsLimitCard({ limits, loading }: { limits: RegsLimits | null; loading: boolean }) {
+  const rule = limits?.rules[0];
+  return (
+    <div className="border rounded-xl p-3 flex flex-col gap-1">
+      <p className="text-xs font-semibold text-gray-500 uppercase tracking-wide">Daily Limit</p>
+      {loading ? (
+        <p className="text-sm text-gray-400">Loading…</p>
+      ) : rule ? (
+        <>
+          <p className="text-sm font-semibold text-gray-900">{rule.catchLimit}</p>
+          {rule.lengthLimit && <p className="text-xs text-gray-500">{rule.lengthLimit}</p>}
+          <p className="text-xs text-gray-400">{limits?.zoneName}</p>
+        </>
+      ) : (
+        <p className="text-sm text-gray-400">No data found</p>
+      )}
+    </div>
+  );
+}
+
+function RegsConsumptionCard({
+  consumption,
+  loading,
+}: {
+  consumption: RegsConsumption | null;
+  loading: boolean;
+}) {
+  return (
+    <div className="border rounded-xl p-3 flex flex-col gap-1">
+      <p className="text-xs font-semibold text-gray-500 uppercase tracking-wide">Safe to Eat</p>
+      {loading ? (
+        <p className="text-sm text-gray-400">Loading…</p>
+      ) : consumption?.mealsPerMonth != null ? (
+        <>
+          <p className="text-sm font-semibold text-gray-900">{consumption.mealsPerMonth} meals/month</p>
+          <p className="text-xs text-gray-400">{consumption.distanceKm.toFixed(0)} km away</p>
+        </>
+      ) : (
+        <p className="text-sm text-gray-400">No data found</p>
       )}
     </div>
   );

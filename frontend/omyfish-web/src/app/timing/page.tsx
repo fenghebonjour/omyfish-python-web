@@ -1,7 +1,7 @@
 "use client";
 
 import { useEffect, useMemo, useState } from "react";
-import { getBiteScoreForecast, type BiteForecast, type BiteHourlyScore, type TimeWindow } from "@/lib/api";
+import { api, type BiteForecast, type BiteHourlyScore, type TimeWindow } from "@/lib/api";
 import { FACTORS, activityBand, dayWindowMean, isoDateOf, type Factor } from "@/lib/biteScore";
 import { ActivityChart, type ChartPoint, type HourRange } from "@/components/timing/ActivityChart";
 import { ActivityGauge } from "@/components/timing/ActivityGauge";
@@ -135,7 +135,8 @@ export default function TimingPage() {
     let cancelled = false;
     setForecast(null);
     setFetchError(null);
-    getBiteScoreForecast(coords.lat, coords.lon)
+    api.biteScore
+      .forecast(coords.lat, coords.lon)
       .then((f) => {
         if (cancelled) return;
         setForecast(f);
