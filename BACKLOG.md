@@ -8,9 +8,16 @@ just python-web's slice of it.
 
 ---
 
-## [ ] A1 — Real image storage + imageStorageKey flow, route versioning
+## [x] A1 — Real image storage + imageStorageKey flow, route versioning
 
-**Status:** NOT STARTED. Blocks the frontend unification work (Workstream C).
+**Status:** DONE (2026-07-28, commit aad9791). django-storages + boto3
+added; STORAGES config mirrors the SQLite/Postgres dev-vs-docker split
+(local disk unless MINIO_ENDPOINT_URL is set); new `minio` service in
+docker-compose.yml. IdentifyView persists uploads and returns a real
+`imageKey`. Observation model renamed `confidence`→`top_confidence`,
+`image_url`→`image_storage_key` to match the family contract exactly
+(`imageUrl` is now a read-only computed field). All routes bumped to
+`/api/v1/...`. Smoke-tested end to end.
 
 This repo currently has neither piece the family decision requires — new
 implementation, not just renaming:
@@ -35,17 +42,14 @@ implementation, not just renaming:
 
 ---
 
-## [ ] B — Proxy the Quebec Regs Advisor feature
+## [x] B — Proxy the Quebec Regs Advisor feature
 
-**Status:** NOT STARTED. Depends on A1's route versioning landing first.
-
-All chatbot/retrieval logic lives in `omyfish-ai` (frozen) at `/regs/*`
-(`GET /limits`, `GET /zones/geojson`, `GET /consumption/stations`,
-`GET /consumption`, `POST /ask`). Add proxy functions to
-`apps/species/ai_client.py` (or a new `apps/regs/` app if it grows past a
-handful of view functions) for the 5 endpoints, reusing the existing
-`camelize()` recursive key-mapping helper. New views/urls under
-`/api/v1/regs/*`.
+**Status:** DONE (2026-07-28, commit 4a9cc86). Implemented at
+`/api/v1/species/regs/*` — **corrected from this file's original
+`/api/v1/regs/*`** to match the nesting convention Java/.NET settled on
+(bite-score lives at `/species/bite-score` too). 5 proxy functions in
+`ai_client.py` + 5 `AllowAny` views. Smoke-tested: correct 503s when
+omyfish-ai is unreachable, 400 validation on `/ask` with no question.
 
 ---
 
