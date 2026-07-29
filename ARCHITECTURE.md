@@ -55,6 +55,10 @@ shape: `{token, refreshToken, userId, email, role}`.
 - `POST /api/v1/species/identify` (multipart `image`, `topK`) → `{predictions[], uncertain, imageKey, isFish}`
   — `imageKey` is a real object-storage key (identify persists the image), not a placeholder.
 - `GET /api/v1/species/bite-score/today|forecast?lat&lon&species[&hours]`
+- `GET /api/v1/species/regs/limits?lat&lon&species`, `GET /api/v1/species/regs/zones/geojson`,
+  `GET /api/v1/species/regs/consumption[/stations]?lat&lon&species[&sizeCm]`,
+  `POST /api/v1/species/regs/ask {question}` — Quebec fishing regs/consumption
+  advisor, proxied from omyfish-ai (see AI Service Integration below)
 - `GET /api/v1/species?northAmericanFreshwater=`
 - `GET/POST /api/v1/observations` (create body references `imageStorageKey` from a
   prior `/identify` call rather than re-uploading the image), `DELETE /api/v1/observations/{id}`,
@@ -76,6 +80,11 @@ Java/.NET adapters do:
 - `bite_score()` → AI `GET /bite-score/{today,forecast}`; response is the
   same six-factor-breakdown shape as the siblings — recursively camelCased,
   never reduced to just the headline score.
+- `regs_*()` → AI `/regs/*` (Quebec fishing regs/consumption advisor — the
+  chatbot/retrieval logic lives only in omyfish-ai, this is a thin proxy like
+  bite_score). `regs_zones_geojson()` passes the raw GeoJSON through
+  untouched rather than camelizing it (map/geometry keys are already
+  lowercase single words).
 
 ## Object Storage
 

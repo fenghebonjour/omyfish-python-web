@@ -35,7 +35,7 @@ make shell-postgres          # psql into the omyfish DB
 config/                   Django project: settings.py, urls.py, wsgi/asgi
 apps/
   accounts/               Custom User (email login, role), JWT register/login/refresh
-  species/                Species catalog + /identify + /bite-score (proxies omyfish-ai)
+  species/                Species catalog + /identify + /bite-score + /regs (proxies omyfish-ai)
   observations/           Observation CRUD + GeoJSON (pragmatic lat/lon floats — see ARCHITECTURE.md)
   notifications/          Per-user notifications
   billing/                Subscription self-service + admin stats/subscriptions

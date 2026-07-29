@@ -42,3 +42,51 @@ def bite_score(path, lat, lon, species="general", hours=None):
     )
     response.raise_for_status()
     return camelize(response.json())
+
+
+# Quebec Regs Advisor — thin proxy to omyfish-ai's /regs/* endpoints (chatbot/
+# retrieval logic stays there, frozen). Same pattern as bite_score() above.
+
+def regs_limits(lat, lon, species="general"):
+    response = requests.get(
+        f"{settings.AI_SERVICE_URL}/regs/limits",
+        params={"lat": lat, "lon": lon, "species": species},
+        timeout=30,
+    )
+    response.raise_for_status()
+    return camelize(response.json())
+
+
+def regs_zones_geojson():
+    response = requests.get(f"{settings.AI_SERVICE_URL}/regs/zones/geojson", timeout=30)
+    response.raise_for_status()
+    return response.json()  # raw GeoJSON — passed through untouched, not camelized
+
+
+def regs_consumption_stations(lat, lon, limit=5):
+    response = requests.get(
+        f"{settings.AI_SERVICE_URL}/regs/consumption/stations",
+        params={"lat": lat, "lon": lon, "limit": limit},
+        timeout=30,
+    )
+    response.raise_for_status()
+    return camelize(response.json())
+
+
+def regs_consumption(lat, lon, species="general", size_cm=None):
+    params = {"lat": lat, "lon": lon, "species": species}
+    if size_cm is not None:
+        params["size_cm"] = size_cm
+    response = requests.get(
+        f"{settings.AI_SERVICE_URL}/regs/consumption", params=params, timeout=30
+    )
+    response.raise_for_status()
+    return camelize(response.json())
+
+
+def regs_ask(question):
+    response = requests.post(
+        f"{settings.AI_SERVICE_URL}/regs/ask", json={"question": question}, timeout=30
+    )
+    response.raise_for_status()
+    return camelize(response.json())

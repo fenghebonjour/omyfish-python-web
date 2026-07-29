@@ -76,3 +76,81 @@ def _bite_score_response(request, path):
             {"detail": "AI service unavailable"}, status=status.HTTP_503_SERVICE_UNAVAILABLE
         )
     return Response(result)
+
+
+# Quebec Regs Advisor — thin proxy to omyfish-ai (frozen), mirrors the
+# bite-score proxy pattern above.
+
+class RegsLimitsView(APIView):
+    permission_classes = [AllowAny]
+
+    def get(self, request):
+        lat = request.query_params.get("lat")
+        lon = request.query_params.get("lon")
+        if lat is None or lon is None:
+            return Response({"detail": "lat and lon are required"}, status=status.HTTP_400_BAD_REQUEST)
+        species = request.query_params.get("species", "general")
+        try:
+            return Response(ai_client.regs_limits(lat, lon, species))
+        except requests.RequestException:
+            return _regs_unavailable()
+
+
+class RegsZonesGeoJsonView(APIView):
+    permission_classes = [AllowAny]
+
+    def get(self, request):
+        try:
+            return Response(ai_client.regs_zones_geojson())
+        except requests.RequestException:
+            return _regs_unavailable()
+
+
+class RegsConsumptionStationsView(APIView):
+    permission_classes = [AllowAny]
+
+    def get(self, request):
+        lat = request.query_params.get("lat")
+        lon = request.query_params.get("lon")
+        if lat is None or lon is None:
+            return Response({"detail": "lat and lon are required"}, status=status.HTTP_400_BAD_REQUEST)
+        limit = request.query_params.get("limit", 5)
+        try:
+            return Response(ai_client.regs_consumption_stations(lat, lon, limit))
+        except requests.RequestException:
+            return _regs_unavailable()
+
+
+class RegsConsumptionView(APIView):
+    permission_classes = [AllowAny]
+
+    def get(self, request):
+        lat = request.query_params.get("lat")
+        lon = request.query_params.get("lon")
+        if lat is None or lon is None:
+            return Response({"detail": "lat and lon are required"}, status=status.HTTP_400_BAD_REQUEST)
+        species = request.query_params.get("species", "general")
+        size_cm = request.query_params.get("sizeCm")
+        try:
+            return Response(ai_client.regs_consumption(lat, lon, species, size_cm))
+        except requests.RequestException:
+            return _regs_unavailable()
+
+
+class RegsAskView(APIView):
+    permission_classes = [AllowAny]
+
+    def post(self, request):
+        question = request.data.get("question")
+        if not question:
+            return Response({"detail": "question is required"}, status=status.HTTP_400_BAD_REQUEST)
+        try:
+            return Response(ai_client.regs_ask(question))
+        except requests.RequestException:
+            return _regs_unavailable()
+
+
+def _regs_unavailable():
+    return Response(
+        {"detail": "AI service unavailable"}, status=status.HTTP_503_SERVICE_UNAVAILABLE
+    )
