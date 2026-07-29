@@ -53,14 +53,13 @@ omyfish-ai is unreachable, 400 validation on `/ask` with no question.
 
 ---
 
-## [ ] C — Adopt the unified frontend baseline
+## [x] C — Adopt the unified frontend baseline
 
-**Status:** NOT STARTED. Depends on A1 and B landing everywhere first.
+**Status:** DONE (2026-07-29, commit 77a74b8). `frontend/omyfish-web/`
+replaced wholesale with the finalized `omyfish-dotnet` baseline — dropped an
+accidentally-rsynced dotnet-local `.env.local` dev override before
+committing. Verified byte-identical to `omyfish-java`'s and
+`omyfish-dotnet`'s copies (`diff -rq`, excluding node_modules/.next) and with
+a clean `next build` in this repo.
 
-This repo's `frontend/omyfish-web/` is currently a byte-identical copy of
-`omyfish-java`'s (the older pattern — `lib/auth.ts` + flat `lib/api.ts`
-functions, no `AuthContext`, no `/register` page). Once the unified frontend
-baseline (sourced from `omyfish-dotnet`, adjusted for the family's
-`token`/`refreshToken`/uppercase-role contract, with the Regs Advisor UI added)
-is finalized, replace this repo's `frontend/omyfish-web/` wholesale with it —
-same copy process used to create it originally.
+**All workstreams for this repo are now complete.**
