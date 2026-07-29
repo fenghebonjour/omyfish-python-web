@@ -8,6 +8,7 @@ networks:
 
 volumes:
   postgres_data:
+  minio_data:
 
 services:
 
@@ -26,6 +27,19 @@ services:
       test: ["CMD-SHELL", "pg_isready -U omyfish"]
       interval: 10s
       retries: 5
+
+  minio:
+    image: minio/minio:latest
+    command: server /data --console-address ":9001"
+    environment:
+      MINIO_ROOT_USER: omyfish
+      MINIO_ROOT_PASSWORD: omyfish_dev
+    ports:
+      - "9000:9000"
+      - "9001:9001"
+    volumes:
+      - minio_data:/data
+    networks: [omyfish-net]
 
   # Default: NOT started. The shared instance runs from ../omyfish-ai's own
   # compose on the omyfish-shared network. For a self-contained demo without
@@ -59,9 +73,14 @@ services:
       JWT_SECRET: dev-secret-change-in-production-32b
       DATABASE_URL: postgres://omyfish:omyfish_dev@postgres:5432/omyfish
       AI_SERVICE_URL: http://ai-service:8000
+      MINIO_ENDPOINT_URL: http://minio:9000
+      MINIO_ACCESS_KEY: omyfish
+      MINIO_SECRET_KEY: omyfish_dev
+      MINIO_BUCKET: omyfish-images
       ALLOWED_HOSTS: "*"
     depends_on:
       postgres: { condition: service_healthy }
+      minio: { condition: service_started }
     networks: [omyfish-net, omyfish-shared]
     healthcheck:
       test: ["CMD", "wget", "-q", "--spider", "http://localhost:8080/api/v1/species"]

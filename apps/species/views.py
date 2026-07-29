@@ -1,4 +1,8 @@
+import uuid
+
 import requests
+from django.core.files.base import ContentFile
+from django.core.files.storage import default_storage
 from rest_framework import status
 from rest_framework.generics import ListAPIView
 from rest_framework.permissions import AllowAny
@@ -28,12 +32,17 @@ class IdentifyView(APIView):
         if image is None:
             return Response({"detail": "image is required"}, status=status.HTTP_400_BAD_REQUEST)
         top_k = int(request.data.get("topK", 5))
+        image_bytes = image.read()
         try:
-            result = ai_client.identify(image.read(), top_k=top_k)
+            result = ai_client.identify(image_bytes, top_k=top_k)
         except requests.RequestException:
             return Response(
                 {"detail": "AI service unavailable"}, status=status.HTTP_503_SERVICE_UNAVAILABLE
             )
+        storage_key = default_storage.save(
+            f"identify/{uuid.uuid4()}/{image.name}", ContentFile(image_bytes)
+        )
+        result["imageKey"] = storage_key
         return Response(result)
 
 

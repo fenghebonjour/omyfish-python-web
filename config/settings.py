@@ -37,6 +37,7 @@ INSTALLED_APPS = [
     "rest_framework",
     "rest_framework_simplejwt",
     "corsheaders",
+    "storages",
     "apps.accounts",
     "apps.species",
     "apps.observations",
@@ -109,6 +110,34 @@ USE_TZ = True
 STATIC_URL = "static/"
 
 DEFAULT_AUTO_FIELD = "django.db.models.BigAutoField"
+
+
+# Object storage — identify persists the uploaded image and returns a real
+# storage key (see apps/species/views.py); observations reference it rather
+# than re-uploading. Defaults to local disk for `make run`; docker-compose
+# points this at the shared MinIO instance via MINIO_ENDPOINT_URL, mirroring
+# the SQLite/Postgres dev-vs-docker split used for the DB above.
+
+MEDIA_URL = "media/"
+MEDIA_ROOT = BASE_DIR / "media"
+
+AWS_S3_ENDPOINT_URL = env("MINIO_ENDPOINT_URL", default=None)
+if AWS_S3_ENDPOINT_URL:
+    AWS_ACCESS_KEY_ID = env("MINIO_ACCESS_KEY", default="omyfish")
+    AWS_SECRET_ACCESS_KEY = env("MINIO_SECRET_KEY", default="omyfish_dev")
+    AWS_STORAGE_BUCKET_NAME = env("MINIO_BUCKET", default="omyfish-images")
+    AWS_S3_ADDRESSING_STYLE = "path"
+    AWS_S3_FILE_OVERWRITE = False
+    AWS_DEFAULT_ACL = None
+    STORAGES = {
+        "default": {"BACKEND": "storages.backends.s3.S3Storage"},
+        "staticfiles": {"BACKEND": "django.contrib.staticfiles.storage.StaticFilesStorage"},
+    }
+else:
+    STORAGES = {
+        "default": {"BACKEND": "django.core.files.storage.FileSystemStorage"},
+        "staticfiles": {"BACKEND": "django.contrib.staticfiles.storage.StaticFilesStorage"},
+    }
 
 
 # DRF / JWT

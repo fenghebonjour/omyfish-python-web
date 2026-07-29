@@ -40,7 +40,7 @@ class ObservationGeoJSONView(APIView):
                     "id": str(obs.id),
                     "speciesName": obs.species_name,
                     "scientificName": obs.scientific_name,
-                    "confidence": obs.confidence,
+                    "topConfidence": obs.top_confidence,
                     "notes": obs.notes,
                     "observedAt": obs.observed_at.isoformat(),
                 },

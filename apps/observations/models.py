@@ -14,11 +14,14 @@ class Observation(models.Model):
     )
     species_name = models.CharField(max_length=255)
     scientific_name = models.CharField(max_length=255, blank=True, null=True)
-    confidence = models.FloatField(blank=True, null=True)
+    top_confidence = models.FloatField(blank=True, null=True)
     notes = models.TextField(blank=True, null=True)
     latitude = models.FloatField()
     longitude = models.FloatField()
-    image_url = models.URLField(blank=True, null=True)
+    # References the key /identify already stored the image under — the
+    # image is already uploaded by then, so observation-create just points
+    # at it instead of re-uploading (family-wide two-step contract).
+    image_storage_key = models.CharField(max_length=500, blank=True, null=True)
     source = models.CharField(max_length=50, default="manual")
     observed_at = models.DateTimeField(auto_now_add=True)
 

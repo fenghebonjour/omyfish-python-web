@@ -61,3 +61,7 @@ frontend/omyfish-web/      Next.js 15 SPA, copied verbatim from omyfish-java's f
 - Database defaults to SQLite (`DATABASE_URL` unset) so `make run` needs no
   external services. Docker Compose sets `DATABASE_URL` to the Postgres/PostGIS
   container to mirror the siblings.
+- Object storage defaults to local disk (`MINIO_ENDPOINT_URL` unset) for the
+  same reason; Docker Compose points it at the `minio` container. `/identify`
+  persists the image and returns a real key as `imageKey`; observation-create
+  references it via `imageStorageKey` instead of re-uploading.

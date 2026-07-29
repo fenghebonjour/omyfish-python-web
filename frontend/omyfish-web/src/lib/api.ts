@@ -15,7 +15,7 @@ async function checkOk(res: Response) {
 // ── Auth ──────────────────────────────────────────────────────────────────────
 
 export async function register(email: string, password: string) {
-  const res = await fetch(`${API_URL}/api/auth/register`, {
+  const res = await fetch(`${API_URL}/api/v1/auth/register`, {
     method: "POST",
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify({ email, password }),
@@ -33,7 +33,7 @@ export interface AuthResult {
 }
 
 export async function login(email: string, password: string) {
-  const res = await fetch(`${API_URL}/api/auth/login`, {
+  const res = await fetch(`${API_URL}/api/v1/auth/login`, {
     method: "POST",
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify({ email, password }),
@@ -47,7 +47,7 @@ export async function refreshSession(): Promise<boolean> {
   const refreshToken = getRefreshToken();
   if (!refreshToken) return false;
   try {
-    const res = await fetch(`${API_URL}/api/auth/refresh`, {
+    const res = await fetch(`${API_URL}/api/v1/auth/refresh`, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ refreshToken }),
@@ -275,13 +275,13 @@ export interface Subscription {
 }
 
 export async function getMySubscription(): Promise<Subscription> {
-  const res = await fetch(`${API_URL}/api/billing/me`, { headers: authHeaders() });
+  const res = await fetch(`${API_URL}/api/v1/billing/me`, { headers: authHeaders() });
   await checkOk(res);
   return res.json();
 }
 
 export async function createCheckout(plan: "monthly" | "yearly"): Promise<string> {
-  const res = await fetch(`${API_URL}/api/billing/checkout`, {
+  const res = await fetch(`${API_URL}/api/v1/billing/checkout`, {
     method: "POST",
     headers: { "Content-Type": "application/json", ...authHeaders() },
     body: JSON.stringify({ plan }),
@@ -312,13 +312,13 @@ export interface AdminSubscriptionRow {
 }
 
 export async function getAdminStats(): Promise<AdminStats> {
-  const res = await fetch(`${API_URL}/api/admin/stats`, { headers: authHeaders() });
+  const res = await fetch(`${API_URL}/api/v1/admin/stats`, { headers: authHeaders() });
   await checkOk(res);
   return res.json();
 }
 
 export async function getAdminSubscriptions(): Promise<AdminSubscriptionRow[]> {
-  const res = await fetch(`${API_URL}/api/admin/subscriptions`, { headers: authHeaders() });
+  const res = await fetch(`${API_URL}/api/v1/admin/subscriptions`, { headers: authHeaders() });
   await checkOk(res);
   return res.json();
 }
@@ -334,10 +334,10 @@ async function adminPost(path: string, body?: object): Promise<AdminSubscription
 }
 
 export const adminGrant = (userId: string, days = 365, plan = "yearly") =>
-  adminPost(`/api/admin/subscriptions/${userId}/grant`, { days, plan });
+  adminPost(`/api/v1/admin/subscriptions/${userId}/grant`, { days, plan });
 
 export const adminRevoke = (userId: string) =>
-  adminPost(`/api/admin/subscriptions/${userId}/revoke`);
+  adminPost(`/api/v1/admin/subscriptions/${userId}/revoke`);
 
 export const adminExtendTrial = (userId: string, days = 7) =>
-  adminPost(`/api/admin/subscriptions/${userId}/extend-trial`, { days });
+  adminPost(`/api/v1/admin/subscriptions/${userId}/extend-trial`, { days });

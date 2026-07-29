@@ -1,5 +1,4 @@
 import base64
-import uuid
 
 import requests
 from django.conf import settings
@@ -31,7 +30,6 @@ def identify(image_bytes, top_k=5):
         "predictions": camelize(data["predictions"]),
         "uncertain": data["uncertain"],
         "isFish": data["is_fish"],
-        "imageKey": str(uuid.uuid4()),
     }
 
 

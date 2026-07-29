@@ -51,14 +51,17 @@ gateway/message-broker tier required.
 All JSON is camelCase; ids are string UUIDs. JWT auth responses share one
 shape: `{token, refreshToken, userId, email, role}`.
 
-- `POST /api/auth/register` · `POST /api/auth/login` · `POST /api/auth/refresh`
+- `POST /api/v1/auth/register` · `POST /api/v1/auth/login` · `POST /api/v1/auth/refresh`
 - `POST /api/v1/species/identify` (multipart `image`, `topK`) → `{predictions[], uncertain, imageKey, isFish}`
+  — `imageKey` is a real object-storage key (identify persists the image), not a placeholder.
 - `GET /api/v1/species/bite-score/today|forecast?lat&lon&species[&hours]`
 - `GET /api/v1/species?northAmericanFreshwater=`
-- `GET/POST /api/v1/observations`, `DELETE /api/v1/observations/{id}`, `GET /api/v1/observations/geojson`
-- `GET /api/notifications`, `PUT /api/notifications/{id}/read`
-- `GET /api/billing/me`, `POST /api/billing/checkout`
-- `GET /api/admin/stats`, `GET /api/admin/subscriptions`, `POST /api/admin/subscriptions/{id}/{grant|revoke|extend-trial}`
+- `GET/POST /api/v1/observations` (create body references `imageStorageKey` from a
+  prior `/identify` call rather than re-uploading the image), `DELETE /api/v1/observations/{id}`,
+  `GET /api/v1/observations/geojson`
+- `GET /api/v1/notifications`, `PUT /api/v1/notifications/{id}/read`
+- `GET /api/v1/billing/me`, `POST /api/v1/billing/checkout`
+- `GET /api/v1/admin/stats`, `GET /api/v1/admin/subscriptions`, `POST /api/v1/admin/subscriptions/{id}/{grant|revoke|extend-trial}`
 
 ## AI Service Integration
 
@@ -66,11 +69,24 @@ shape: `{token, refreshToken, userId, email, role}`.
 Java/.NET adapters do:
 
 - `identify()` → AI `POST /predict` `{image_base64, top_k}`; maps
-  `common_name` → `commonName` (and the rest of the response) to camelCase,
-  and synthesizes `imageKey` (the AI service doesn't return one).
+  `common_name` → `commonName` (and the rest of the response) to camelCase.
+  `apps/species/views.py::IdentifyView` then persists the uploaded image via
+  Django's default storage and attaches the real key as `imageKey` (the AI
+  service itself doesn't return one — see "Object Storage" below).
 - `bite_score()` → AI `GET /bite-score/{today,forecast}`; response is the
   same six-factor-breakdown shape as the siblings — recursively camelCased,
   never reduced to just the headline score.
+
+## Object Storage
+
+`/identify` persists the uploaded image and returns a real storage key as
+`imageKey`; `POST /api/v1/observations` then references that key via
+`imageStorageKey` instead of re-uploading — the same two-step contract as the
+Java/.NET siblings. Storage backend follows the same dev-vs-docker split as
+the database: local disk (`MEDIA_ROOT`) when `MINIO_ENDPOINT_URL` is unset (so
+`make run` needs no external services), MinIO (via `django-storages`'
+S3-compatible backend) when it is — see `config/settings.py`'s `STORAGES`
+block and `docker-compose.yml`'s `minio` service.
 
 ## Geo: pragmatic scaffold vs. PostGIS upgrade
 
