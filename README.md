@@ -1,16 +1,19 @@
 # OMyFish — Python Web (Django)
 
+> **OMyFish — Your AI Fishing Companion.** *When, Where, What you catch.* A Bite Score timing forecast for **when** to fish, AI fish identification with GPS-logged observations on a map for **where** fish are being caught, and a Regs & Tips chatbot (powered by Groq) for **what** you can legally keep.
+
 Full-stack web member of the OMyFish enterprise-language family — a Django/DRF
 monolith exposing the same REST contract as the `omyfish-java` and
 `omyfish-dotnet` siblings, reusing their Next.js frontend verbatim.
 
 ## Project Family
 
-- `../omyfish-python` — ML/AI origin (training, Streamlit, FastAPI)
-- `../omyfish-ai` — standalone AI microservice shared by all enterprise members
+- `../omyfish-python` — ML/AI origin, kept in place for training the fish-ID model (Streamlit, FastAPI)
+- `../omyfish-ai` — standalone AI microservice shared by all enterprise members (fish ID, Bite Score, Regs & Tips chatbot)
 - `../omyfish-java` — Java 21 / Spring Boot / Hexagonal, microservices
 - `../omyfish-dotnet` — .NET 10 / Clean Architecture / CQRS, microservices
-- `omyfish-python-web` (this repo) — Django monolith, single-origin DRF API
+- `omyfish-python-web` (this repo) — Django monolith, single-origin DRF API — newest sibling alongside omyfish-ios
+- `../omyfish-ios` — SwiftUI native client (private) — newest sibling alongside this repo
 
 See `ARCHITECTURE.md` for the "why Django instead of microservices" rationale.
 
