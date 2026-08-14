@@ -27,6 +27,8 @@ class SpeciesListView(ListAPIView):
 
 
 class IdentifyView(APIView):
+    permission_classes = [AllowAny]
+
     def post(self, request):
         image = request.FILES.get("image")
         if image is None:

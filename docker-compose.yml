@@ -41,6 +41,17 @@ services:
       - minio_data:/data
     networks: [omyfish-net]
 
+  createbuckets:
+    image: minio/mc:latest
+    depends_on:
+      minio: { condition: service_started }
+    entrypoint: >
+      sh -c "
+      until mc alias set local http://minio:9000 omyfish omyfish_dev; do sleep 1; done;
+      mc mb --ignore-existing local/omyfish-images;
+      "
+    networks: [omyfish-net]
+
   # Default: NOT started. The shared instance runs from ../omyfish-ai's own
   # compose on the omyfish-shared network. For a self-contained demo without
   # the external instance, run: docker compose --profile bundled up -d
@@ -81,9 +92,10 @@ services:
     depends_on:
       postgres: { condition: service_healthy }
       minio: { condition: service_started }
+      createbuckets: { condition: service_completed_successfully }
     networks: [omyfish-net, omyfish-shared]
     healthcheck:
-      test: ["CMD", "wget", "-q", "--spider", "http://localhost:8080/api/v1/species"]
+      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://localhost:8080/api/v1/species')"]
       interval: 10s
       retries: 5
       start_period: 20s
