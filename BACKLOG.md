@@ -63,3 +63,37 @@ committing. Verified byte-identical to `omyfish-java`'s and
 a clean `next build` in this repo.
 
 **All workstreams for this repo are now complete.**
+
+---
+
+## [ ] E — Migrate species catalog persistence to MongoDB
+
+**Status:** NOT STARTED (added 2026-08-19). `omyfish-java` did this first
+(commit 36c0200, see its `BACKLOG.md` item E) — species catalog is
+read-mostly, flexible-schema reference data with no relational integrity
+needs, so it doesn't belong on Postgres. Port the same move here:
+
+- `apps/species/models.py`'s `Species` is currently a plain Django ORM model
+  (Postgres via the shared `DATABASE_URL`, migration
+  `apps/species/migrations/0001_initial.py`). Django's ORM doesn't speak
+  MongoDB natively — decide on `djongo`/`mongoengine` vs. a thin repository
+  wrapping `pymongo` directly behind `apps/species`'s existing view/serializer
+  boundary (`views.py`, `serializers.py`) before starting; the latter is
+  closer to Java's ports-and-adapters pattern (`SpeciesDocument`/
+  `SpeciesMongoRepository` behind `SpeciesRepository`) and avoids fighting
+  Django's ORM/admin assumptions about a relational backend.
+- Whatever adapter is chosen, `apps/species/admin.py`'s `Species` registration
+  will need reworking or dropping — Django admin assumes a `Model` subclass
+  backed by the ORM.
+- `seed_species.py` (`apps/species/management/commands/`) currently seeds via
+  the Django ORM — update it to go through the new repository/adapter
+  instead, same idempotent "skip if scientific/key already exists" behavior
+  Java's `SpeciesSeeder` uses.
+- Add a `mongodb` service to `docker-compose.yml` (mirror Java's: `mongo:7`,
+  root user/pass env vars, healthcheck via `mongosh --eval`), mirroring the
+  SQLite/Postgres dev-vs-docker split already used for `DATABASES` in
+  `config/settings.py` (local dev likely stays simplest with a local Mongo
+  connection string rather than SQLite, since SQLite has no Mongo-equivalent
+  embedded fallback).
+- Verify with this repo's test suite plus an end-to-end `docker compose up
+  --build` check, same as Java's verification pass.
