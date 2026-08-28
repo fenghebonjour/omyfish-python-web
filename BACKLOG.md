@@ -97,3 +97,17 @@ needs, so it doesn't belong on Postgres. Port the same move here:
   embedded fallback).
 - Verify with this repo's test suite plus an end-to-end `docker compose up
   --build` check, same as Java's verification pass.
+
+---
+
+## [x] F — Regs & Tips: render chat answers as Markdown, not raw text
+
+**Status:** DONE (2026-08-25, commit 88503de). `/regs/ask` returns
+Groq-generated Markdown (bold, bullet lists, etc.), but the shared
+frontend's chat UI dumped it into plain text, so users saw literal
+`**`/`-` characters. Fixed via `react-markdown` — same bug independently
+found and fixed the same day in `omyfish-java` (commit e510503) and
+`omyfish-dotnet` (commit 4e7e38b), expected since all three share
+`frontend/omyfish-web` byte-for-byte (item C above). `omyfish-ios` has its
+own separate SwiftUI chat view and carried the same bug until 2026-08-28
+(commit e53b418), fixed there via `AttributedString(markdown:)`.
