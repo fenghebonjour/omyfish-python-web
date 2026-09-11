@@ -111,3 +111,71 @@ found and fixed the same day in `omyfish-java` (commit e510503) and
 `frontend/omyfish-web` byte-for-byte (item C above). `omyfish-ios` has its
 own separate SwiftUI chat view and carried the same bug until 2026-08-28
 (commit e53b418), fixed there via `AttributedString(markdown:)`.
+
+---
+
+## [~] G — Weakness audit follow-up (ported from omyfish-dotnet)
+
+**Status:** IN PROGRESS (added 2026-09-11). `omyfish-dotnet` went through a
+senior-dev-style weakness audit (its `BACKLOG.md` item F) covering security,
+resilience, data-layer, and testing/CI findings, then asked for the same
+treatment across the other enterprise siblings. Full explanation in
+`docs/WEAKNESS_AUDIT.md` — this file is the "what shipped". This repo is a
+Django monolith, not a microservices mirror, so several dotnet findings
+don't apply the same way (or at all) — each is annotated below.
+
+**Security — DONE 2026-09-11:**
+- ~~No rate limiting on `/identify`/`/bite-score/*`~~ — fixed: DRF
+  `ScopedRateThrottle`, same rates as dotnet (`identify`: 10/min,
+  `bite-score`: 30/min). (`WEAKNESS_AUDIT.md` §1.2)
+- ~~Refresh token in response body + `localStorage`~~ — fixed: httpOnly,
+  `SameSite=Strict` cookie scoped to `/api/v1/auth`, matching dotnet's
+  shape exactly; added `POST /api/v1/auth/logout`. Needed
+  `CORS_ALLOW_CREDENTIALS = True` as a companion change (confirmed safe
+  with `CORS_ALLOW_ALL_ORIGINS = True` — see the audit doc). Frontend
+  (`AuthContext.tsx`/`api.ts`) updated to match dotnet's already-shipped
+  version. Verified live (register/login/refresh/logout cookie behavior)
+  plus 9 new tests in `apps/accounts/tests.py`. (§1.3)
+- ~~Backend container runs as root~~ — fixed: `USER django` in the root
+  `Dockerfile`, mirroring what `frontend/omyfish-web/Dockerfile` (shared
+  with the siblings) already did. Verified via `docker run --rm
+  --entrypoint id`. No Helm/K8s manifests exist in this repo (docker-compose
+  only), so that half of the dotnet finding doesn't apply. (§1.4)
+- §1.1 (gateway configures auth but doesn't enforce it) — not applicable,
+  already correct by construction (secure-by-default `DEFAULT_PERMISSION_CLASSES`,
+  no separate gateway to desync from it).
+
+**Resilience:**
+- §2.1 (AI-client timeout/retry/circuit-breaker) — timeouts already present
+  (`requests(..., timeout=30)` throughout `apps/species/ai_client.py`); retry
+  and circuit-breaker **not done**, left as a follow-up.
+- ~~No centralized exception handling~~ — fixed: `config/exception_handler.py`
+  wraps DRF's default handler, normalizing any truly unhandled exception into
+  a structured 500 instead of Django's raw error page (which leaks stack
+  traces whenever `DEBUG=True`, its default). (§2.2)
+- §2.3/§2.4 (outbox pattern / consumer idempotency) — not applicable,
+  confirmed structurally: no message broker, no Django signals, nothing that
+  does two related writes needing to be coupled.
+
+**Data layer:** all four items (§3.1–§3.4) already fine — no fixes needed.
+See `WEAKNESS_AUDIT.md` for the evidence (Django's migration framework has
+no schema-drift failure mode; no dead PostGIS infra exists since the geo
+upgrade is a documented not-yet-done tradeoff, not an abandoned build; no
+N+1 queries found).
+
+**Testing/CI — partially done:**
+- ~~Zero real tests~~ — partially fixed: `apps/accounts/tests.py` now has
+  `AuthFlowTests` + `PermissionDefaultTests` (9 tests) covering the security
+  fixes above. **Still open**: no tests for `apps/species`,
+  `apps/observations`, `apps/notifications`, `apps/billing`.
+- No CI workflow of any kind (`.github/workflows/` doesn't exist) — **not
+  done**, left as a follow-up.
+
+**Not done in this pass, left for a follow-up round:**
+- 2.1's retry/circuit-breaker on the AI HTTP client.
+- Full test coverage for `apps/species`/`observations`/`notifications`/`billing`.
+- A CI workflow (at minimum: `python manage.py test`, ideally + lint/format
+  + frontend build + dependency scan, matching the dotnet sibling's `ci.yml`).
+- Bonus findings from the audit doc: `Notification` model has no producer
+  anywhere (dead write-side); `DEBUG`/`SECRET_KEY`/`JWT_SECRET` all have
+  insecure dev-fallback defaults that don't fail closed in production.

@@ -19,10 +19,11 @@ class LoginSerializer(serializers.Serializer):
     password = serializers.CharField(write_only=True)
 
 
-def auth_response(user, token, refresh_token):
+def auth_response(user, token):
+    # No refreshToken here — it travels only as an httpOnly cookie now
+    # (BACKLOG.md item G, WEAKNESS_AUDIT.md §1.3).
     return {
         "token": str(token),
-        "refreshToken": str(refresh_token),
         "userId": str(user.id),
         "email": user.email,
         "role": user.role,

@@ -28,6 +28,7 @@ class SpeciesListView(ListAPIView):
 
 class IdentifyView(APIView):
     permission_classes = [AllowAny]
+    throttle_scope = "identify"
 
     def post(self, request):
         image = request.FILES.get("image")
@@ -50,6 +51,7 @@ class IdentifyView(APIView):
 
 class BiteScoreTodayView(APIView):
     permission_classes = [AllowAny]
+    throttle_scope = "bite-score"
 
     def get(self, request):
         return _bite_score_response(request, "today")
@@ -57,6 +59,7 @@ class BiteScoreTodayView(APIView):
 
 class BiteScoreForecastView(APIView):
     permission_classes = [AllowAny]
+    throttle_scope = "bite-score"
 
     def get(self, request):
         return _bite_score_response(request, "forecast")

@@ -48,8 +48,11 @@ frontend/omyfish-web/      Next.js 15 SPA, copied verbatim from omyfish-java's f
   explicit `source=` mappings from snake_case model fields — see
   `apps/observations/serializers.py` for the pattern.
 - Auth responses (`register`/`login`/`refresh`) always return
-  `{token, refreshToken, userId, email, role}` — built by
-  `apps/accounts/serializers.py::auth_response`.
+  `{token, userId, email, role}` — built by
+  `apps/accounts/serializers.py::auth_response`. The refresh token travels
+  only as an httpOnly, `SameSite=Strict` cookie scoped to `/api/v1/auth`
+  (`REFRESH_COOKIE_NAME` in `apps/accounts/views.py`), never in the body —
+  see `docs/WEAKNESS_AUDIT.md` §1.3. `POST /api/v1/auth/logout` clears it.
 - `role` values are uppercase strings (`"USER"`, `"ADMIN"`) to match the
   Java/.NET siblings' convention.
 - Admin-only endpoints (`apps/billing/admin_views.py`) are gated by

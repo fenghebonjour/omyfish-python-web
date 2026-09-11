@@ -153,6 +153,20 @@ REST_FRAMEWORK = {
         "rest_framework.permissions.IsAuthenticated",
     ),
     "DEFAULT_SCHEMA_CLASS": "drf_spectacular.openapi.AutoSchema",
+    # Per-IP rate limiting on /identify and /bite-score/* — both are AllowAny and drive cost on
+    # the external AI service, so without a limit here they were open to unbounded free usage
+    # (BACKLOG.md item G, WEAKNESS_AUDIT.md §1.2, matching omyfish-dotnet's identify/bite-score
+    # rate limits). A view opts in by setting `throttle_scope`; views without one are unaffected.
+    "DEFAULT_THROTTLE_CLASSES": ("rest_framework.throttling.ScopedRateThrottle",),
+    "DEFAULT_THROTTLE_RATES": {
+        "identify": "10/min",
+        "bite-score": "30/min",
+    },
+    # Normalizes any exception DRF's own default handler doesn't already turn into clean JSON
+    # (e.g. a genuine bug in a view) into a structured 500 instead of Django's raw error page —
+    # which would leak stack traces/source if a prod deploy ever forgot to set DEBUG=False
+    # (BACKLOG.md item G, WEAKNESS_AUDIT.md §2.2).
+    "EXCEPTION_HANDLER": "config.exception_handler.exception_handler",
 }
 
 SPECTACULAR_SETTINGS = {
@@ -170,8 +184,12 @@ SIMPLE_JWT = {
 
 
 # CORS — open for local/dev, mirrors the Java/.NET gateways' allow_origins=["*"].
+# CORS_ALLOW_CREDENTIALS is required for the refresh-token cookie (WEAKNESS_AUDIT.md §1.3) —
+# django-cors-headers automatically reflects the exact request Origin (never a literal "*")
+# whenever credentials are allowed, so this stays safe to combine with ALLOW_ALL_ORIGINS.
 
 CORS_ALLOW_ALL_ORIGINS = True
+CORS_ALLOW_CREDENTIALS = True
 
 
 # omyfish-ai integration (../omyfish-ai over HTTP — see apps/species/ai_client.py)
