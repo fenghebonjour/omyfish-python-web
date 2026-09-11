@@ -104,18 +104,22 @@ omyfish-python-web-django` → `uid=1001(django)`.
 
 ## 2. Resilience
 
-**Status: §2.2 fixed 2026-09-11. §2.1 partially already fine (timeouts
-exist), retry/circuit-breaker not done. §2.3/§2.4 confirmed not applicable.**
+**Status: §2.1 and §2.2 fixed 2026-09-11 (no circuit breaker, deliberate).
+§2.3/§2.4 confirmed not applicable.**
 
 ### 2.1 No timeout/retry/circuit breaker on the AI service client
 
-**Already fine (timeouts) / not done (retry, circuit breaker).**
-`apps/species/ai_client.py` sets `timeout=30` on every `requests` call — the
-specific "hangs forever" failure mode dotnet fixed doesn't exist here. No
-retry policy or circuit breaker exists though (no `tenacity`, no
-`HTTPAdapter`-mounted `Retry`), so a transient blip still surfaces
-immediately as a 503. **Not fixed in this pass** — smaller/lower-urgency
-than the security tier; left for a follow-up (see BACKLOG.md item G).
+**Timeouts already fine; retry fixed 2026-09-11; no circuit breaker
+(deliberate, matches the dotnet/java siblings' own scope decision).**
+`apps/species/ai_client.py` already set `timeout=30` on every `requests`
+call — the "hangs forever" failure mode dotnet fixed doesn't exist here.
+But a transient blip (dropped connection, brief upstream restart) still
+surfaced immediately as a 503 with no retry. Fixed: a module-level
+`requests.Session()` with a `urllib3.util.Retry` (2 retries, exponential
+backoff, retries on 502/503/504) mounted via `HTTPAdapter` for both
+`http://`/`https://`; all seven call sites now go through `_session.get`/
+`_session.post` instead of the bare `requests` module functions. No new
+dependency — `urllib3` is already transitive via `requests`.
 
 ### 2.2 No centralized exception handling
 

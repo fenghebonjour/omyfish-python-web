@@ -145,10 +145,14 @@ don't apply the same way (or at all) — each is annotated below.
   already correct by construction (secure-by-default `DEFAULT_PERMISSION_CLASSES`,
   no separate gateway to desync from it).
 
-**Resilience:**
-- §2.1 (AI-client timeout/retry/circuit-breaker) — timeouts already present
-  (`requests(..., timeout=30)` throughout `apps/species/ai_client.py`); retry
-  and circuit-breaker **not done**, left as a follow-up.
+**Resilience — DONE 2026-09-11 (bar circuit breaker, deliberate):**
+- ~~AI-client retry~~ — fixed: `apps/species/ai_client.py` gained a
+  module-level `requests.Session()` with a `urllib3.util.Retry` (2 retries,
+  exponential backoff, retries on 502/503/504) mounted via `HTTPAdapter`;
+  all seven call sites now go through the session instead of bare
+  `requests.get`/`.post`. Timeouts were already present. No circuit breaker
+  added — matches the dotnet/java siblings' own decision to ship
+  timeout+retry first. (§2.1)
 - ~~No centralized exception handling~~ — fixed: `config/exception_handler.py`
   wraps DRF's default handler, normalizing any truly unhandled exception into
   a structured 500 instead of Django's raw error page (which leaks stack
@@ -172,7 +176,6 @@ N+1 queries found).
   done**, left as a follow-up.
 
 **Not done in this pass, left for a follow-up round:**
-- 2.1's retry/circuit-breaker on the AI HTTP client.
 - Full test coverage for `apps/species`/`observations`/`notifications`/`billing`.
 - A CI workflow (at minimum: `python manage.py test`, ideally + lint/format
   + frontend build + dependency scan, matching the dotnet sibling's `ci.yml`).
