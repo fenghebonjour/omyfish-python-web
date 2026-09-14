@@ -39,8 +39,12 @@ apps/
   observations/           Observation CRUD + GeoJSON (pragmatic lat/lon floats — see ARCHITECTURE.md)
   notifications/          Per-user notifications
   billing/                Subscription self-service + admin stats/subscriptions
-frontend/omyfish-web/      Next.js 15 SPA, copied verbatim from omyfish-java's frontend
 ```
+
+**Frontend:** not vendored in this repo. Extracted to its own repo/image, shared across every
+omyfish-* backend — https://github.com/fenghebonjour/omyfish-frontend. `docker-compose.yml`'s
+`frontend` service pulls a pinned tag (`ghcr.io/fenghebonjour/omyfish-frontend:<tag>`); bump
+that tag to pick up frontend changes. To develop the frontend itself, clone that repo directly.
 
 ## Conventions
 
