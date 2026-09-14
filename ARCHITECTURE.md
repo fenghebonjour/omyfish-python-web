@@ -119,7 +119,9 @@ consumes plain GeoJSON.
 
 ## Frontend
 
-`frontend/omyfish-web/` is the Next.js 15 SPA copied verbatim from
-`omyfish-java`. It talks to whichever backend is at `NEXT_PUBLIC_API_URL`
-(default `http://localhost:8080`) — zero component changes needed to point it
-at this Django backend instead of a Java/.NET gateway.
+The Next.js 15 SPA is no longer vendored here — it's extracted to its own repo/image,
+https://github.com/fenghebonjour/omyfish-frontend, shared across every omyfish-* backend.
+`docker-compose.yml` pulls it by pinned tag. It talks to whichever backend is at
+`NEXT_PUBLIC_API_URL` (baked in at that repo's build time, default `http://localhost:8080`) —
+zero component changes needed to point it at this Django backend instead of a Java/.NET
+gateway.
