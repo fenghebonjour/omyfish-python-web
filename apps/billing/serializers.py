@@ -7,6 +7,7 @@ def subscription_response(subscription):
         "plan": subscription.plan,
         "trialEnd": subscription.trial_end,
         "currentPeriodEnd": subscription.current_period_end,
+        "paymentProcessor": subscription.payment_processor,
     }
 
 
@@ -18,8 +19,41 @@ def subscription_row(subscription):
     }
 
 
+def checkout_response(intent):
+    return {
+        "processor": intent.processor,
+        "clientSecret": intent.client_secret,
+        "subscriptionId": intent.subscription_id,
+        "status": intent.status,
+    }
+
+
+def setup_intent_response(intent):
+    return {
+        "processor": intent.processor,
+        "customerId": intent.customer_id,
+        "clientSecret": intent.client_secret,
+    }
+
+
+def refund_response(result):
+    return {
+        "refundId": result.refund_id,
+        "status": result.status,
+        "amountCents": result.amount_cents,
+    }
+
+
 class CheckoutSerializer(serializers.Serializer):
     plan = serializers.ChoiceField(choices=["monthly", "yearly"])
+
+
+class RefundSerializer(serializers.Serializer):
+    amountCents = serializers.IntegerField(required=False, allow_null=True, default=None)
+
+
+class PortalSessionSerializer(serializers.Serializer):
+    returnUrl = serializers.CharField()
 
 
 class GrantSerializer(serializers.Serializer):

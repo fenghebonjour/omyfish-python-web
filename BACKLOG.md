@@ -185,135 +185,247 @@ N+1 queries found).
 
 ---
 
-## [ ] H — Payment module parity, phase 1: a real Stripe integration
+## [x] H — Payment module parity, phase 1: a real Stripe integration
 
-**Status:** NOT STARTED (added 2026-10-10). Port of `omyfish-java`'s item H
-— except there's nothing to upgrade here, only to build. `apps/billing`
-today (`models.py` 54 lines, `services.py` 58 lines, `views.py` 23 lines)
-has `Subscription` (trial/grant/revoke/extend only — no
-`stripe_customer_id`/`stripe_subscription_id` fields at all), and
-`CheckoutView.post` is a literal stub:
+**Status:** DONE (2026-10-10). Port of `omyfish-java`'s item H — except
+there was nothing to upgrade here, only to build: `apps/billing`'s
+`Subscription` had no `stripe_customer_id`/`stripe_subscription_id` at
+all, and `CheckoutView.post` was a literal 503 stub.
 
-```python
-# Stripe is not wired up in this scaffold — mirrors the siblings'
-# "empty when not configured" checkout behavior.
-return Response({"detail": "Stripe is not configured"}, status=503)
-```
+1. ~~`Subscription` model~~ — **DONE.** Added `stripe_customer_id`
+   (indexed — it's the webhook lookup key), `stripe_subscription_id`,
+   `payment_processor`, `last_payment_reference` (phase I's Adyen need,
+   added here since it's the same migration pass) —
+   `0002_processedwebhookevent_and_more.py`, generated via
+   `manage.py makemigrations` rather than hand-written SQL (the Django
+   idiom; the Go/dotnet siblings hand-write migrations because their ORMs
+   don't autogenerate them).
+2. ~~Real checkout~~ — **DONE.** `apps/billing/gateways/stripe_gateway.py`
+   (`StripeGateway.create_subscription_intent`):
+   `stripe.Subscription.create(payment_behavior="default_incomplete",
+   expand=["latest_invoice.confirmation_secret"], idempotency_key=...)`,
+   returning `{processor, clientSecret, subscriptionId, status}` — the
+   exact shape `omyfish-frontend`'s `CheckoutResponse` type expects,
+   confirmed by reading it, not assumed. The installed `stripe` package's
+   actual TypedDict params and resource fields (confirmed via
+   `inspect.getsource` on the installed package, not guessed from the
+   Java/dotnet siblings' shape) turned out to match the Java/dotnet
+   siblings closely: `RequestOptions` (incl. `idempotency_key`) is mixed
+   directly into each call's own params dict rather than a separate
+   options object, and `invoice.parent.subscription_details.subscription`/
+   `invoice.confirmation_secret.client_secret` are the same nested paths
+   dotnet's Stripe.net needed reflection to confirm.
+3. ~~Webhook endpoint~~ — **DONE.** `POST /api/v1/billing/webhook/<processor>`
+   (`WebhookView`, `AllowAny` — no gateway-level auth-filter gap to find
+   here, since this is a monolith with no separate API gateway service
+   unlike the Java/dotnet siblings), dispatching to whichever gateway the
+   `processor` path segment names via a plain dict-based registry (see
+   item I.4). `customer.subscription.updated`/`.deleted` → apply
+   status/plan/period-end to the local row via the same effects path
+   admin/reconciliation also use.
+4. ~~Admin refund~~ — **DONE.** `RefundView` alongside
+   `GrantView`/`RevokeView`/`ExtendTrialView`, resolving the
+   subscription's latest paid invoice to a PaymentIntent
+   (`stripe.InvoicePayment.list(invoice=..., status="paid")`) and
+   refunding that; local subscription status untouched (refund and
+   cancel are separate decisions, same as the Java/dotnet siblings).
+5. ~~Saved payment method / SetupIntent~~ — **DONE.**
+   `POST /api/v1/billing/payment-method/setup` (`stripe.SetupIntent`,
+   `usage="off_session"`) + a `setup_intent.succeeded` webhook case
+   mapped to `payment_method_attached`, applied via
+   `services._apply_event_effects` calling the gateway's
+   `set_default_payment_method`.
 
-No webhook endpoint, no admin refund (`admin_views.py` has
-`StatsView`/`SubscriptionListView`/`GrantView`/`RevokeView`/
-`ExtendTrialView` only). This phase is closer to Java's actual day-one
-build than to a port — Java's own item H assumed checkout/webhook/admin
-ops already existed and only added 3DS/refund/saved-payment-methods on
-top; here all of that foundation has to be built first.
-
-1. **`Subscription` model:** add `stripe_customer_id`, `stripe_subscription_id`
-   fields (migration needed, `apps/billing/migrations/`).
-2. **Real checkout:** `stripe-python`, `Subscription.create(payment_behavior=
-   "default_incomplete", ...)`, return `{processor, clientSecret,
-   subscriptionId, status}` — the shape the shared `omyfish-frontend`
-   repo's `StripeCheckoutForm.tsx` already expects (confirmed against the
-   frontend's `CheckoutResponse` type, not assumed).
-3. **Webhook endpoint:** `customer.subscription.updated`/`.deleted`
-   signature verification (`stripe.Webhook.construct_event`) + applying
-   status/plan/period-end to the local row.
-4. **Admin refund:** a `RefundView` alongside the existing
-   `GrantView`/`RevokeView`/`ExtendTrialView`, resolving the latest paid
-   invoice to a PaymentIntent and refunding it.
-5. **Saved payment method / SetupIntent:** `payment-method/setup` +
-   `setup_intent.succeeded` webhook case.
-
-Verified: nothing yet — not started.
-
----
-
-## [ ] I — Payment module parity, phase 2: idempotency, dedup, reconciliation, multi-processor
-
-**Status:** NOT STARTED (added 2026-10-10). Port of `omyfish-java`'s item I.
-Depends on phase H landing first.
-
-1. **Idempotency keys on checkout/refund** — an `Idempotency-Key` request
-   header, persisted as `(key, user_id, endpoint) → result` in a new model
-   *before* calling Stripe, short-circuiting a repeat key to the stored
-   result; same key passed to `stripe-python`'s own
-   `idempotency_key=` kwarg as a second layer. Include Java's
-   stale-reservation recovery (an incomplete reservation past ~1 minute
-   gets retried with the same key, not orphaned forever).
-2. **Webhook event dedup** — a `ProcessedWebhookEvent` model keyed by the
-   provider's event id, checked before re-applying effects.
-3. **Reconciliation job** — a periodic management command (Django's
-   `manage.py` custom commands are the natural fit here, unlike Java's
-   Spring `@Scheduled`) that lists each processor's recent subscriptions
-   and repairs any local row that never got linked.
-4. **Multi-processor: PayPal + Adyen.** Define a `PaymentGateway`
-   protocol/ABC mirroring Java's `PaymentPort`
-   (`create_subscription_intent`/`create_setup_intent`/
-   `set_default_payment_method`/`refund_subscription`/`verify_webhook`/
-   `is_configured`/`list_recent_subscriptions`/`create_portal_session` —
-   the last one from phase J below), implement `StripeGateway`,
-   `PayPalGateway`, `AdyenGateway` behind it, selected by a small registry
-   (default + per-name lookup). `Subscription` needs a `payment_processor`
-   field. Python SDK choice for PayPal/Adyen not yet decided — check
-   what's actually current/maintained before picking one.
-
-Verified: nothing yet — not started.
+Verified: `python manage.py test apps` — 48/48 green (9 pre-existing +
+39 new `apps/billing/tests.py` cases, service- and view-level). A
+`FakeGateway` test double stands in for the real Stripe/PayPal/Adyen
+gateways throughout, the same role NSubstitute/Mockito mocks play in the
+Java/dotnet test suites, since this environment has no real processor
+test credentials.
 
 ---
 
-## [ ] J — Payment module parity, phase 3: Customer Portal, plan propagation, past_due
+## [x] I — Payment module parity, phase 2: idempotency, dedup, reconciliation, multi-processor
 
-**Status:** NOT STARTED (added 2026-10-10). Port of the *payment-specific*
-parts of `omyfish-java`'s item J — not change-password/nav-wiring, which
-are account features the shared frontend already handles identically
-across all three backends regardless of which one is running.
+**Status:** DONE (2026-10-10). Port of `omyfish-java`'s item I, including
+its later multi-processor and idempotency-key-reuse-after-crash
+additions.
 
-1. **Stripe Customer Portal** — `billing/portal-session` →
-   `stripe.billing_portal.Session.create`; PayPal/Adyen gateways return
-   `None`/not-supported (no portal equivalent for either). The shared
-   frontend's "Manage billing" button already expects this exact
-   `{url}` shape and a `payment_processor` field on the subscription
-   response — until this ships it just shows the "contact support"
-   fallback here, gracefully.
-2. **Webhook plan propagation** — when building the webhook handler (new
-   in phase H, extended here), explicitly check whether it reads the
-   plan/price off a `customer.subscription.updated` event or only
-   status/period-end. Java found this bug in two different adapters
-   (Stripe and PayPal) because the same wrong assumption was baked into
-   the port's design, not just one implementation — worth checking
-   deliberately here too, in a third implementation.
-3. **Past_due status** — add `past_due` to `Subscription.status`'s
-   choices, a `mark_past_due()` method, and an `invoice.payment_failed`
-   webhook case. The shared frontend already has the banner for this —
-   `sub.status === "past_due"`.
+1. ~~Idempotency keys on checkout/refund~~ — **DONE.** `IdempotencyRecord`
+   model (`(key, endpoint)` `UniqueConstraint`, same shape as the
+   Java/dotnet siblings' `IdempotencyRecord`) +
+   `services._reserve`/`_is_orphaned`/`_require_owner`. A race on the
+   same key is caught via Django's own `IntegrityError` wrapping the
+   unique-constraint violation — no SQL-state-code special-casing needed
+   the way dotnet's Postgres-specific `23505` check or a hand-rolled SQL
+   migration would, since Django's ORM abstracts that away identically
+   across SQLite (used by `manage.py test`) and Postgres (used in
+   Docker) — same destination as the Java/dotnet siblings, a simpler
+   vehicle to get there. `services.start_checkout`/`refund` both reserve
+   → call the gateway → complete-or-delete, with the replay path for a
+   repeated key and the orphaned-reservation retry (`_is_orphaned`,
+   1-minute threshold, same as Java/dotnet). The same key is also passed
+   to `stripe-python`'s own `idempotency_key=` kwarg on every call — the
+   second, independent layer the Java/dotnet siblings' design relies on.
+2. ~~Webhook event dedup~~ — **DONE.** `ProcessedWebhookEvent` model
+   keyed by the provider's event id. `services.apply_event` checks it
+   before delegating to `_apply_event_effects`, recording the id after a
+   handled event — exact split the Java/dotnet siblings use between
+   `applyEvent`/`applyEventEffects` (`ApplyEventAsync`/
+   `ApplyEventEffectsAsync` in dotnet).
+3. ~~Reconciliation job~~ — **DONE**, and built the way the backlog
+   itself flagged it should be: `services.reconcile(since)` plus
+   `manage.py reconcile_subscriptions --lookback-hours=24` (a Django
+   management command — the natural fit here, unlike Java's Spring
+   `@Scheduled` or dotnet's admin-endpoint-only trigger — meant to run
+   from cron/Celery beat/a Kubernetes CronJob), *and*
+   `POST /api/v1/admin/subscriptions/reconcile?lookbackHours=24` for an
+   on-demand admin trigger matching the siblings' own endpoint. Ported
+   1:1 from Java's `relink`/`resyncStatus` split: relink repairs a
+   missing/mismatched local link (creating a trial row first via
+   `get_or_create(..., defaults={"trial_end": timezone.now()})` — a
+   "trial of 0 days," immediately expired, if the user has none at all,
+   matching Java's `Subscription.startTrial(userId, 0)` rather than
+   looking like a fresh active trial), resync replays through
+   `apply_event` with no `event_id` set so the webhook-dedup check from
+   item I.2 doesn't interfere.
+4. ~~Multi-processor: PayPal + Adyen~~ — **DONE.**
+   `apps/billing/gateways/` (`base.py`'s `PaymentGateway` —
+   a `typing.Protocol`, Python's nearest equivalent to Java's
+   `PaymentPort` interface/dotnet's `IPaymentGateway` — plus dataclasses
+   for `SubscriptionIntent`/`SetupIntentResult`/`RefundResult`/
+   `PaymentEvent`/`ReconciliationCandidate`; `registry.py`'s
+   `default_gateway()`/`exists()`/`by_name()`/`configured()`, ported 1:1
+   from the Java/dotnet siblings' `PaymentProcessorRegistry`).
+   `StripeGateway` (above). `PayPalGateway`: hand-rolled REST via
+   `requests`, same reasoning as the Java/dotnet siblings' own adapters
+   — PayPal has no first-party Python SDK worth depending on either.
+   `AdyenGateway`: the official `Adyen` PyPI package (16.0.0, confirmed
+   actively maintained — regular releases, owned by Adyen — before
+   depending on it, same discipline as the Java/dotnet siblings). Its
+   actual API (confirmed via `inspect.getsource` on the installed
+   package rather than guessed) turned out to be the *simpler*,
+   classic-style shape Java's adapter uses
+   (`client.checkout.payments_api.sessions(request_dict,
+   idempotency_key=...)`, plain dicts in/out, `Adyen.util
+   .is_valid_hmac_notification`) rather than dotnet's 36.1.0
+   DI/`IHostBuilder`-registered-services shape — the two .NET and Python
+   SDKs for the same provider turned out to have diverged architecturally
+   from each other, not just from Java's older version, worth noting for
+   whoever next touches either. Request field casing/enum values
+   (`recurringProcessingModel: "Subscription"`, `storePaymentMethodMode:
+   "enabled"`) were confirmed by reflecting on the actual string values
+   dotnet's typed SDK serializes its own enum members to, rather than
+   guessed from casing convention, since Adyen's API mixes PascalCase and
+   camelCase enum values inconsistently across fields.
+   `Subscription.payment_processor` (above, phase H's migration).
+   `PaymentEvent.processor` defaults to `"stripe"` (every event
+   constructed before multi-processor support existed was implicitly
+   Stripe's). The webhook endpoint already took a `<str:processor>` path
+   segment from the start (phase H), so no later route change was needed
+   here the way the dotnet port needed one.
 
-Verified: nothing yet — not started.
+Verified: `python manage.py test apps` — 48/48 green, included in phase
+H's total above (built together in this environment rather than as
+separate passes, since there's no existing code to port item-by-item
+against — see phase H's "Verified" note for the breakdown).
 
 ---
 
-## [ ] K — Payment module parity, phase 4: guard against a duplicate subscription
+## [x] J — Payment module parity, phase 3: Customer Portal, plan propagation, past_due
 
-**Status:** NOT STARTED (added 2026-10-10). Port of `omyfish-java`'s item K
-— found live in the java sibling, not in testing: a second checkout call
-with a different idempotency key created a second, separate, active Stripe
-subscription for a user who already had one, both billing monthly.
-Confirmed with real Stripe data (`stripe invoices list --customer <id>`),
-not assumed.
+**Status:** DONE (2026-10-10). Port of the *payment-specific* parts of
+`omyfish-java`'s item J — not change-password/nav-wiring, which are
+account features the shared frontend already handles identically across
+all three backends regardless of which one is running.
 
-The lesson to port deliberately, not just the code: idempotency keys
-(phase I) only guarantee "this exact request happens once," never "this
-user doesn't already have what they're asking to create" — that's a
-separate business invariant needing its own explicit check. Add it at the
-top of the checkout flow: if the user's subscription already has a
-processor id attached and a status of `active`/`past_due`, reject with
-`409` before ever reserving an idempotency key or calling the processor. A
-`trialing` user with no processor attached yet is unaffected.
+1. ~~Stripe Customer Portal~~ — **DONE.**
+   `POST /api/v1/billing/portal-session` (`PortalSessionSerializer
+   {returnUrl}` → `{url}`, the exact shape confirmed against
+   `omyfish-frontend`'s `api.billing.portalSession`, not assumed) →
+   `services.create_portal_session` → `StripeGateway
+   .create_portal_session` (`stripe.billing_portal.Session.create`);
+   `PayPalGateway`/`AdyenGateway` both return `None` (no portal
+   equivalent for either, same decision the Java/dotnet siblings made).
+   Same 404-vs-503 split as `refund`: no subscription
+   (`Subscription.DoesNotExist`) or no customer id on file
+   (`NoProcessorCustomerError`) → 404; no portal for this processor
+   (`None`) → 503, which the shared frontend's "contact support"
+   fallback already handles gracefully.
+2. ~~Webhook plan propagation~~ — **DONE, checked deliberately per this
+   item's own warning, not assumed fine.** Since this was a ground-up
+   build rather than a port, there was no existing Stripe-adapter bug to
+   rediscover the way the dotnet port found one in its own
+   pre-existing code — but the same wrong assumption was still a trap
+   worth avoiding on a *fourth* implementation (Java's Stripe/PayPal,
+   dotnet's Stripe, now this one): `StripeGateway._from_subscription_event`
+   reads `item.price.id` off the subscription's first item and reverses
+   it through `_plan_for_price_id` (mirroring `PayPalGateway
+   ._plan_for_plan_id`, built the same way in phase I.4) rather than
+   leaving `plan` unset. `services._apply_event_effects`'s
+   `subscription_updated` case reads `event.plan or subscription.plan or
+   "monthly"` — written correctly the first time here specifically
+   because this item's own text named the exact bug to watch for before
+   any webhook-handling code was written, not caught in review after.
+3. ~~Past_due status~~ — **DONE.** `Subscription.PAST_DUE` +
+   `mark_past_due()`; driven by a new `invoice.payment_failed` Stripe
+   webhook case (`StripeGateway._from_invoice_payment_failed`, reading
+   the subscription id off `invoice.parent.subscription_details
+   .subscription` — confirmed via `inspect.getsource` on the installed
+   `stripe` package rather than assumed, the same discipline dotnet's
+   port needed reflection against the Stripe.net DLL for) mapped to a
+   new `payment_failed` `services._apply_event_effects` case.
 
-Also worth carrying over as a documented, not-yet-fixed gap rather than
-silently copying only the parts that look finished: Java's webhook-to-row
-matching is keyed on the processor's customer id alone, not on which
-specific subscription an event is about — safe only because this phase's
-guard makes two live subscriptions per customer much rarer, not because
-that matching was actually fixed. Decide whether to fix it here while
-building, or carry the same gap forward on purpose.
+Verified: included in phase H's `python manage.py test apps` total (48/48
+green) — built together with phases H/I rather than as a separate pass,
+since there was no existing code to port item-by-item against. Test
+coverage specific to this item: plan-overwritten-on-event /
+plan-kept-when-event-has-none (the propagation check), payment_failed →
+past_due, portal-session delegate + no-customer-id-404.
 
-Verified: nothing yet — not started.
+---
+
+## [x] K — Payment module parity, phase 4: guard against a duplicate subscription
+
+**Status:** DONE (2026-10-10). Port of `omyfish-java`'s item K — found
+live there, not in testing: a second checkout call with a different
+idempotency key created a second, separate, active Stripe subscription
+for a user who already had one, both billing monthly. Confirmed there
+with real Stripe data (`stripe invoices list --customer <id>`), not
+assumed.
+
+The actual lesson, carried over deliberately rather than reinvented:
+idempotency keys (phase I) only guarantee "this exact request happens
+once," never "this user doesn't already have what they're asking to
+create" — a business invariant needs its own explicit check.
+`services.start_checkout` now checks this right after the same-key
+replay path (so a genuine retry of an in-flight/completed checkout is
+unaffected) and before reserving a new idempotency key or touching the
+gateway at all: if the user's subscription row already has
+`stripe_subscription_id` set and `effective_status` is `active` or
+`past_due`, it raises a new `AlreadySubscribedError`, mapped to `409
+Conflict` at `CheckoutView` — a distinct exception from
+`Subscription.DoesNotExist`/`NoProcessorCustomerError` (→404, "no such
+thing") and `IdempotencyConflictError` (→409, "this key is still in
+flight") so the three failure modes stay distinguishable in the view's
+except chain the way Java/dotnet's separate `catch` blocks are. A
+`trialing` user with no processor attached yet is unaffected (explicit
+test coverage, not just inferred from the condition).
+
+Also carried forward deliberately, not fixed, matching the Java/dotnet
+siblings' own decision: webhook-to-local-row matching is still keyed on
+the processor customer id alone (`Subscription.objects.filter
+(stripe_customer_id=event.customer_id)`), not which specific subscription
+an event is about — safe only because this phase's guard makes a
+customer having two live subscriptions at once much rarer, not because
+that matching was actually fixed. Left as-is here too, for the same
+reason dotnet gave: diverging behavior between ports for a case none of
+the three has actually hit isn't worth it.
+
+Verified: included in phase H's `python manage.py test apps` total
+(48/48 green) — built together with phases H/I/J rather than as a
+separate pass. Test coverage specific to this item:
+already-active-subscriber and already-past-due-subscriber guards both
+fire without calling the gateway, trialing-with-no-processor is
+unaffected. All four payment-module-parity items (H, I, J, K) are now
+done.

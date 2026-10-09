@@ -9,3 +9,5 @@ requests==2.32.3
 gunicorn==23.0.0
 django-storages[s3]==1.14.4
 boto3==1.35.36
+stripe==16.0.0
+Adyen==16.0.0

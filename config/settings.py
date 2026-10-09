@@ -195,3 +195,32 @@ CORS_ALLOW_CREDENTIALS = True
 # omyfish-ai integration (../omyfish-ai over HTTP — see apps/species/ai_client.py)
 
 AI_SERVICE_URL = env("AI_SERVICE_URL", default="http://localhost:8000")
+
+
+# Payment processors (test keys) — billing endpoints return 503/null until configured, same
+# "empty when not configured" convention as the Java/dotnet siblings.
+
+STRIPE_SECRET_KEY = env("STRIPE_SECRET_KEY", default="")
+STRIPE_WEBHOOK_SECRET = env("STRIPE_WEBHOOK_SECRET", default="")
+STRIPE_PRICE_MONTHLY = env("STRIPE_PRICE_MONTHLY", default="")  # 5 CAD/month
+STRIPE_PRICE_YEARLY = env("STRIPE_PRICE_YEARLY", default="")  # 29 CAD/year
+
+PAYPAL_BASE_URL = env("PAYPAL_BASE_URL", default="https://api-m.sandbox.paypal.com")
+PAYPAL_CLIENT_ID = env("PAYPAL_CLIENT_ID", default="")
+PAYPAL_CLIENT_SECRET = env("PAYPAL_CLIENT_SECRET", default="")
+PAYPAL_WEBHOOK_ID = env("PAYPAL_WEBHOOK_ID", default="")
+PAYPAL_RETURN_URL = env("PAYPAL_RETURN_URL", default="")
+PAYPAL_CANCEL_URL = env("PAYPAL_CANCEL_URL", default="")
+PAYPAL_PLAN_MONTHLY = env("PAYPAL_PLAN_MONTHLY", default="")
+PAYPAL_PLAN_YEARLY = env("PAYPAL_PLAN_YEARLY", default="")
+
+ADYEN_API_KEY = env("ADYEN_API_KEY", default="")
+ADYEN_MERCHANT_ACCOUNT = env("ADYEN_MERCHANT_ACCOUNT", default="")
+ADYEN_HMAC_KEY = env("ADYEN_HMAC_KEY", default="")
+ADYEN_ENVIRONMENT = env("ADYEN_ENVIRONMENT", default="test")  # test|live
+ADYEN_CURRENCY = env("ADYEN_CURRENCY", default="CAD")
+ADYEN_PRICE_MONTHLY_CENTS = env.int("ADYEN_PRICE_MONTHLY_CENTS", default=500)
+ADYEN_PRICE_YEARLY_CENTS = env.int("ADYEN_PRICE_YEARLY_CENTS", default=2900)
+ADYEN_RETURN_URL = env("ADYEN_RETURN_URL", default="")
+
+PAYMENT_DEFAULT_PROCESSOR = env("PAYMENT_DEFAULT_PROCESSOR", default="stripe")
