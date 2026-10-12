@@ -44,7 +44,7 @@ gateway/message-broker tier required.
 | `species`       | Species catalog, `/identify` and `/bite-score` proxies to `omyfish-ai` |
 | `observations`  | Observation CRUD, GeoJSON export                                  |
 | `notifications` | Per-user notifications, mark-as-read                              |
-| `billing`       | Subscription self-service (`/billing/me`, `/billing/checkout`) + admin ops |
+| `billing`       | Subscription self-service (`/billing/me`, checkout, Stripe portal) + admin ops |
 
 ## REST Contract
 
@@ -64,8 +64,15 @@ shape: `{token, refreshToken, userId, email, role}`.
   prior `/identify` call rather than re-uploading the image), `DELETE /api/v1/observations/{id}`,
   `GET /api/v1/observations/geojson`
 - `GET /api/v1/notifications`, `PUT /api/v1/notifications/{id}/read`
-- `GET /api/v1/billing/me`, `POST /api/v1/billing/checkout`
-- `GET /api/v1/admin/stats`, `GET /api/v1/admin/subscriptions`, `POST /api/v1/admin/subscriptions/{id}/{grant|revoke|extend-trial}`
+- `GET /api/v1/billing/me` (`status` includes `past_due`, set on a Stripe
+  `invoice.payment_failed` webhook), `POST /api/v1/billing/checkout`,
+  `POST /api/v1/billing/payment-method/setup`,
+  `POST /api/v1/billing/portal-session` `{returnUrl}` → `{url}` (Stripe
+  only — PayPal/Adyen subscribers get a 503, no hosted portal equivalent),
+  `POST /api/v1/billing/webhook/{processor}`
+- `GET /api/v1/admin/stats`, `GET /api/v1/admin/subscriptions`,
+  `POST /api/v1/admin/subscriptions/{id}/{grant|revoke|refund|extend-trial}`,
+  `POST /api/v1/admin/subscriptions/reconcile`
 
 ## AI Service Integration
 

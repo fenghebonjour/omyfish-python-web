@@ -46,7 +46,7 @@ apps/
   species/               Species catalog, /identify + /bite-score (proxies omyfish-ai)
   observations/           Observation CRUD + GeoJSON
   notifications/          User notifications
-  billing/                Subscription (me/checkout) + admin stats/subscriptions
+  billing/                Subscription (me/checkout/Stripe portal) + admin stats/subscriptions/refund
 ```
 
 **Frontend:** not vendored here — extracted to its own repo/image, shared across every
