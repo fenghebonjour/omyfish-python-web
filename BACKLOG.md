@@ -429,3 +429,41 @@ already-active-subscriber and already-past-due-subscriber guards both
 fire without calling the gateway, trialing-with-no-processor is
 unaffected. All four payment-module-parity items (H, I, J, K) are now
 done.
+
+---
+
+## [~] L — Stripe webhook silently rejected when event `api_version` doesn't match the SDK's (audited, not applicable)
+
+**Status:** AUDITED (2026-10-12), no code change. `omyfish-java` hit this
+live: `stripe-java` generates per-`api_version`-pinned model classes, and
+`event.getDataObjectDeserializer().getObject()` returns an empty `Optional`
+— not an exception — when the event's `api_version` doesn't match the
+version the SDK was compiled for. The `sub == null` branch swallowed that
+with no logging, so a portal cancellation's webhook looked like a
+signature failure. `omyfish-dotnet` ported it as item L too: `Stripe.net`
+has the same version gate but **throws** instead of returning empty, and
+`StripePaymentGateway`'s `catch { return null; }` was swallowing the
+exception with the identical end-user symptom.
+
+Checked whether `stripe-python` has either shape of this bug before
+assuming a port was needed — it doesn't. Read `stripe/_event.py` and
+`stripe/_webhook.py` in the installed `stripe` 16.0.0 (pinned
+`api_version` here: `2026-09-30.endive` — incidentally the exact value the
+Java item's sandbox was issuing against Java's older pinned SDK, which is
+what makes this worth stating plainly rather than just porting code
+blind): `Event.Data.object` is typed `UntypedStripeObject[Any]`, built
+dynamically from whatever JSON fields are present. There's no generated
+per-version model class to be incompatible with, and `Webhook
+.construct_event` takes no `api_version`/`throwOnApiVersionMismatch`-
+equivalent parameter anywhere in that call path. A mismatched `api_version`
+just means some fields on the dynamic object might not be the ones a given
+SDK version's docs describe — it is never silently `None` and never raises
+for this reason. `StripeGateway.verify_webhook`'s `except
+stripe.SignatureVerificationError: return None` has nothing of this shape
+to catch.
+
+Conclusion: this is a `stripe-java`-specific (and, differently,
+`Stripe.net`-specific) problem, not a cross-SDK one. Nothing to fix in
+`stripe_gateway.py`; recorded here instead of silently skipping the port so
+a future audit doesn't re-ask the same question. No test added — there is
+no reproducible failure mode here to write one for.
