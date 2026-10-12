@@ -3,6 +3,7 @@ from rest_framework.generics import ListCreateAPIView
 from rest_framework.response import Response
 from rest_framework.views import APIView
 
+from . import services
 from .models import Observation
 from .serializers import ObservationSerializer
 
@@ -28,23 +29,4 @@ class ObservationDeleteView(APIView):
 
 class ObservationGeoJSONView(APIView):
     def get(self, request):
-        observations = Observation.objects.filter(user=request.user)
-        features = [
-            {
-                "type": "Feature",
-                "geometry": {
-                    "type": "Point",
-                    "coordinates": [obs.longitude, obs.latitude],
-                },
-                "properties": {
-                    "id": str(obs.id),
-                    "speciesName": obs.species_name,
-                    "scientificName": obs.scientific_name,
-                    "topConfidence": obs.top_confidence,
-                    "notes": obs.notes,
-                    "observedAt": obs.observed_at.isoformat(),
-                },
-            }
-            for obs in observations
-        ]
-        return Response({"type": "FeatureCollection", "features": features})
+        return Response(services.to_geojson(request.user))
