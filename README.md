@@ -52,6 +52,8 @@ apps/
 **Frontend:** not vendored here — extracted to its own repo/image, shared across every
 omyfish-* backend: https://github.com/fenghebonjour/omyfish-frontend. `docker-compose.yml`'s
 `frontend` service pulls a pinned tag; develop the frontend itself by cloning that repo directly.
+`make up`/`build-up` warn (without blocking) if that pin is behind a sibling
+`../omyfish-frontend` checkout — bump the tag to pick up frontend changes.
 
 ## REST Contract
 
